@@ -1,0 +1,41 @@
+# Rust
+/target/
+
+# Flutter
+flutter/.dart_tool/
+flutter/build/
+flutter/.flutter-plugins
+flutter/.flutter-plugins-dependencies
+flutter/.metadata
+flutter/.packages
+flutter/pubspec.lock
+flutter/log
+
+# Nix
+/result
+/result-*
+
+# direnv
+.direnv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Android
+flutter/android/.gradle/
+flutter/android/app/src/main/jniLibs/
+flutter/android/local.properties
+flutter/android/key.properties
+flutter/android/*.keystore
+*.apk
+*.aab
+
+# OS
+.DS_Store
+Thumbs.db
+
+apk/
