@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../src/auth_provider.dart';
+import '../src/routes.dart';
 
 /// Splash screen shown at startup.
 ///
@@ -19,7 +21,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _fadeIn;
-  String _statusText = 'Loading...';
+  String? _statusText;
 
   @override
   void initState() {
@@ -35,7 +37,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
   Future<void> _init() async {
     try {
-      setState(() => _statusText = 'Checking session...');
+      setState(() => _statusText = null); // will use l10n in build
 
       // Initialise the Rust core and restore any persisted session from
       // platform secure storage (Android Keystore / iOS Keychain).
@@ -48,17 +50,18 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
       final auth = ref.read(authProvider);
       if (auth is AuthAuthenticated) {
-        context.go('/');
+        context.go(AppRoutes.home);
       } else if (auth is AuthLocked) {
-        context.go('/unlock');
+        context.go(AppRoutes.unlock);
       } else {
-        context.go('/activate');
+        context.go(AppRoutes.activate);
       }
     } catch (e) {
       if (!mounted) return;
-      setState(() => _statusText = 'Error: $e');
+      final l10n = AppLocalizations.of(context);
+      setState(() => _statusText = l10n?.errorWithMessage(e.toString()) ?? 'Error: $e');
       await Future<void>.delayed(const Duration(seconds: 2));
-      if (mounted) context.go('/activate');
+      if (mounted) context.go(AppRoutes.activate);
     }
   }
 
@@ -70,6 +73,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -86,7 +90,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
               ),
               const SizedBox(height: 24),
               Text(
-                'Llave',
+                l10n.appName,
                 style: theme.textTheme.headlineLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: theme.colorScheme.primary,
@@ -94,7 +98,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
               ),
               const SizedBox(height: 4),
               Text(
-                'Llave',
+                l10n.appName,
                 style: theme.textTheme.titleMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                   letterSpacing: 4,
@@ -108,7 +112,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
               ),
               const SizedBox(height: 16),
               Text(
-                _statusText,
+                _statusText ?? l10n.checkingSession,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'l10n/app_localizations.dart';
 import 'package:logging/logging.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +23,7 @@ import 'screens/dni_auth_screen.dart';
 import 'screens/mydata_screen.dart';
 import 'screens/qr_auth_screen.dart';
 import 'src/auth_provider.dart';
+import 'src/routes.dart';
 import 'src/theme_provider.dart';
 
 Future<void> main() async {
@@ -52,13 +54,13 @@ Future<void> main() async {
 }
 
 /// Routes that require an active (decrypted) session.
-const _protectedRoutes = {'/', '/pending', '/history', '/settings', '/qr'};
+const _protectedRoutes = {AppRoutes.home, AppRoutes.pending, AppRoutes.history, AppRoutes.settings, AppRoutes.qr};
 
 /// Routes that should not be accessible when already authenticated.
-const _guestOnlyRoutes = {'/activate', '/dni-auth'};
+const _guestOnlyRoutes = {AppRoutes.activate, AppRoutes.dniAuth};
 
 /// Routes with their own navigation logic (never redirect away from them).
-const _selfManagedRoutes = {'/splash', '/unlock', '/set-pin'};
+const _selfManagedRoutes = {AppRoutes.splash, AppRoutes.unlock, AppRoutes.setPin};
 
 final _log = Logger('Router');
 
@@ -72,7 +74,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   final notifier = _AuthChangeNotifier(ref);
 
   return GoRouter(
-    initialLocation: '/splash',
+    initialLocation: AppRoutes.splash,
     refreshListenable: notifier,
     redirect: (context, state) {
       final auth = ref.read(authProvider);
@@ -88,49 +90,49 @@ final routerProvider = Provider<GoRouter>((ref) {
       final needsPin = auth is AuthNeedsPin;
 
       // Encrypted session on disk — force PIN entry.
-      if (isLocked && location != '/unlock') {
-        _log.info('redirect: $location → /unlock (session locked)');
-        return '/unlock';
+      if (isLocked && location != AppRoutes.unlock) {
+        _log.info('redirect: $location → ${AppRoutes.unlock} (session locked)');
+        return AppRoutes.unlock;
       }
 
       // Just activated — force PIN setup.
-      if (needsPin && location != '/set-pin') {
-        _log.info('redirect: $location → /set-pin (needs PIN setup)');
-        return '/set-pin';
+      if (needsPin && location != AppRoutes.setPin) {
+        _log.info('redirect: $location → ${AppRoutes.setPin} (needs PIN setup)');
+        return AppRoutes.setPin;
       }
 
       // Redirect unauthenticated users away from protected routes.
       if (!isAuthenticated && _protectedRoutes.contains(location)) {
-        _log.info('redirect: $location → /activate (not authenticated)');
-        return '/activate';
+        _log.info('redirect: $location → ${AppRoutes.activate} (not authenticated)');
+        return AppRoutes.activate;
       }
 
       // Redirect authenticated users away from guest-only routes.
       if (isAuthenticated && _guestOnlyRoutes.contains(location)) {
-        _log.info('redirect: $location → / (already authenticated)');
-        return '/';
+        _log.info('redirect: $location → ${AppRoutes.home} (already authenticated)');
+        return AppRoutes.home;
       }
 
       return null;
     },
     routes: [
-      GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
-      GoRoute(path: '/unlock', builder: (_, __) => const UnlockScreen()),
-      GoRoute(path: '/set-pin', builder: (_, __) => const SetPinScreen()),
-      GoRoute(path: '/activate', builder: (_, __) => const ActivateScreen()),
-      GoRoute(path: '/dni-auth', builder: (_, __) => const DniAuthScreen()),
+      GoRoute(path: AppRoutes.splash, builder: (_, __) => const SplashScreen()),
+      GoRoute(path: AppRoutes.unlock, builder: (_, __) => const UnlockScreen()),
+      GoRoute(path: AppRoutes.setPin, builder: (_, __) => const SetPinScreen()),
+      GoRoute(path: AppRoutes.activate, builder: (_, __) => const ActivateScreen()),
+      GoRoute(path: AppRoutes.dniAuth, builder: (_, __) => const DniAuthScreen()),
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),
         routes: [
-          GoRoute(path: '/', builder: (_, __) => const HomeScreen()),
-          GoRoute(path: '/pending', builder: (_, __) => const PendingScreen()),
-          GoRoute(path: '/history', builder: (_, __) => const HistoryScreen()),
-          GoRoute(path: '/qr', builder: (_, __) => const QrAuthScreen()),
-          GoRoute(path: '/mydata', builder: (_, __) => const MyDataScreen()),
+          GoRoute(path: AppRoutes.home, builder: (_, __) => const HomeScreen()),
+          GoRoute(path: AppRoutes.pending, builder: (_, __) => const PendingScreen()),
+          GoRoute(path: AppRoutes.history, builder: (_, __) => const HistoryScreen()),
+          GoRoute(path: AppRoutes.qr, builder: (_, __) => const QrAuthScreen()),
+          GoRoute(path: AppRoutes.mydata, builder: (_, __) => const MyDataScreen()),
           GoRoute(
-              path: '/settings', builder: (_, __) => const SettingsScreen()),
+              path: AppRoutes.settings, builder: (_, __) => const SettingsScreen()),
           if (DevScreen.isEnabled)
-            GoRoute(path: '/dev', builder: (_, __) => const DevScreen()),
+            GoRoute(path: AppRoutes.dev, builder: (_, __) => const DevScreen()),
         ],
       ),
     ],
@@ -154,7 +156,7 @@ class LlaveApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      title: 'Llave',
+      onGenerateTitle: (context) => AppLocalizations.of(context)!.appName,
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,
       theme: ThemeData(
@@ -167,6 +169,8 @@ class LlaveApp extends ConsumerWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
       ),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
     );
   }
@@ -177,45 +181,45 @@ class AppShell extends StatelessWidget {
   final Widget child;
   const AppShell({super.key, required this.child});
 
-  static const _railDestinations = [
+  static List<NavigationRailDestination> _railDestinations(AppLocalizations l10n) => [
     NavigationRailDestination(
-        icon: Icon(Icons.home_outlined),
-        selectedIcon: Icon(Icons.home),
-        label: Text('Home')),
+        icon: const Icon(Icons.home_outlined),
+        selectedIcon: const Icon(Icons.home),
+        label: Text(l10n.navHome)),
     NavigationRailDestination(
-        icon: Icon(Icons.notifications_outlined),
-        selectedIcon: Icon(Icons.notifications),
-        label: Text('Pending')),
+        icon: const Icon(Icons.notifications_outlined),
+        selectedIcon: const Icon(Icons.notifications),
+        label: Text(l10n.navPending)),
     NavigationRailDestination(
-        icon: Icon(Icons.history_outlined),
-        selectedIcon: Icon(Icons.history),
-        label: Text('History')),
+        icon: const Icon(Icons.history_outlined),
+        selectedIcon: const Icon(Icons.history),
+        label: Text(l10n.navHistory)),
     NavigationRailDestination(
-        icon: Icon(Icons.settings_outlined),
-        selectedIcon: Icon(Icons.settings),
-        label: Text('Settings')),
+        icon: const Icon(Icons.settings_outlined),
+        selectedIcon: const Icon(Icons.settings),
+        label: Text(l10n.navSettings)),
   ];
 
-  static const _barDestinations = [
+  static List<NavigationDestination> _barDestinations(AppLocalizations l10n) => [
     NavigationDestination(
-        icon: Icon(Icons.home_outlined),
-        selectedIcon: Icon(Icons.home),
-        label: 'Home'),
+        icon: const Icon(Icons.home_outlined),
+        selectedIcon: const Icon(Icons.home),
+        label: l10n.navHome),
     NavigationDestination(
-        icon: Icon(Icons.notifications_outlined),
-        selectedIcon: Icon(Icons.notifications),
-        label: 'Pending'),
+        icon: const Icon(Icons.notifications_outlined),
+        selectedIcon: const Icon(Icons.notifications),
+        label: l10n.navPending),
     NavigationDestination(
-        icon: Icon(Icons.history_outlined),
-        selectedIcon: Icon(Icons.history),
-        label: 'History'),
+        icon: const Icon(Icons.history_outlined),
+        selectedIcon: const Icon(Icons.history),
+        label: l10n.navHistory),
     NavigationDestination(
-        icon: Icon(Icons.settings_outlined),
-        selectedIcon: Icon(Icons.settings),
-        label: 'Settings'),
+        icon: const Icon(Icons.settings_outlined),
+        selectedIcon: const Icon(Icons.settings),
+        label: l10n.navSettings),
   ];
 
-  static const _routes = ['/', '/pending', '/history', '/settings'];
+  static const _routes = [AppRoutes.home, AppRoutes.pending, AppRoutes.history, AppRoutes.settings];
 
   int _currentIndex(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
@@ -225,17 +229,18 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final width = MediaQuery.sizeOf(context).width;
     final useRail = width >= 600;
     final selectedIndex = _currentIndex(context);
     final location = GoRouterState.of(context).uri.toString();
-    final showFab = location != '/settings';
+    final showFab = location != AppRoutes.settings;
 
     final fab = FloatingActionButton.extended(
-      onPressed: () => context.go('/qr'),
-      tooltip: 'Scan QR',
+      onPressed: () => context.go(AppRoutes.qr),
+      tooltip: l10n.scanQr,
       icon: const Icon(Icons.qr_code_scanner),
-      label: const Text('Scan QR'),
+      label: Text(l10n.scanQr),
     );
 
     if (useRail) {
@@ -247,7 +252,7 @@ class AppShell extends StatelessWidget {
               selectedIndex: selectedIndex,
               onDestinationSelected: (i) => context.go(_routes[i]),
               labelType: NavigationRailLabelType.all,
-              destinations: _railDestinations,
+              destinations: _railDestinations(l10n),
             ),
             const VerticalDivider(thickness: 1, width: 1),
             Expanded(child: child),
@@ -262,7 +267,7 @@ class AppShell extends StatelessWidget {
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
         onDestinationSelected: (i) => context.go(_routes[i]),
-        destinations: _barDestinations,
+        destinations: _barDestinations(l10n),
       ),
     );
   }

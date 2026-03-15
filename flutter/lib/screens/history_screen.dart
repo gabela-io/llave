@@ -1,9 +1,10 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 
-import '../src/ip_rate_limit.dart';
+import '../src/api_helpers.dart';
+import '../src/llave_bridge.dart';
 import '../src/rust/api/api.dart' as native_ffi;
+import '../widgets/data_screen_scaffold.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -29,98 +30,62 @@ class _HistoryScreenState extends State<HistoryScreen> {
       _error = null;
     });
 
-    try {
-      final result = await native_ffi.getHistory();
-      if (!result.ok) {
-        final err = result.error ?? 'Unknown error';
-        setState(() => _error = err);
-        if (mounted && isIpRateLimited(err)) {
-          showIpRateLimitBanner(context);
+    await handleApiCall(
+      apiCall: () async {
+        final r = await native_ffi.getHistory();
+        return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
+      },
+      setLoading: (v) {
+        if (mounted) setState(() => _loading = v);
+      },
+      setError: (e) {
+        if (mounted) setState(() => _error = e);
+      },
+      context: context,
+      onData: (decoded) {
+        final List<Map<String, dynamic>> items = [];
+        if (decoded is List) {
+          for (final item in decoded) {
+            if (item is Map<String, dynamic>) items.add(item);
+          }
         }
-        return;
-      }
-      final parsed = jsonDecode(result.data);
-      final List<Map<String, dynamic>> items = [];
-      // The respuesta is a direct JSON array of operation entries.
-      if (parsed is List) {
-        for (final item in parsed) {
-          if (item is Map<String, dynamic>) items.add(item);
-        }
-      }
-      setState(() => _operations = items);
-    } catch (e) {
-      final err = e.toString();
-      setState(() => _error = err);
-      if (mounted && isIpRateLimited(err)) {
-        showIpRateLimitBanner(context);
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+        setState(() => _operations = items);
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('History'),
+        title: Text(l10n.historyTitle),
         actions: [
           IconButton(
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: l10n.refresh,
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.error_outline,
-                            size: 48, color: theme.colorScheme.error),
-                        const SizedBox(height: 16),
-                        Text('Error: $_error', textAlign: TextAlign.center),
-                        const SizedBox(height: 16),
-                        FilledButton(
-                            onPressed: _load, child: const Text('Retry')),
-                      ],
-                    ),
-                  ),
-                )
-              : _operations.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.history,
-                              size: 48,
-                              color: theme.colorScheme.onSurfaceVariant
-                                  .withValues(alpha: 0.4)),
-                          const SizedBox(height: 16),
-                          Text('No operations found',
-                              style: theme.textTheme.titleMedium),
-                          const SizedBox(height: 16),
-                          FilledButton(
-                              onPressed: _load, child: const Text('Refresh')),
-                        ],
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _operations.length,
-                        itemBuilder: (context, index) =>
-                            _OperationCard(operation: _operations[index]),
-                      ),
-                    ),
+      body: DataScreenScaffold(
+        loading: _loading,
+        error: _error,
+        isEmpty: _operations.isEmpty,
+        onRetry: _load,
+        emptyIcon: Icons.history,
+        emptyTitle: l10n.historyEmptyTitle,
+        child: RefreshIndicator(
+          onRefresh: _load,
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: _operations.length,
+            itemBuilder: (context, index) =>
+                _OperationCard(operation: _operations[index]),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -131,6 +96,7 @@ class _OperationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final tipo = operation['tipo']?.toString() ?? '';
     final resultado = operation['resultado']?.toString() ?? '';
@@ -139,7 +105,7 @@ class _OperationCard extends StatelessWidget {
 
     // "01" = confirmed/accepted, "10" = rejected.
     final isAccepted = resultado == '01';
-    final resultLabel = isAccepted ? 'Accepted' : 'Rejected';
+    final resultLabel = isAccepted ? l10n.accepted : l10n.rejected;
     final resultColor = isAccepted ? Colors.green : theme.colorScheme.error;
 
     return Card(
@@ -149,12 +115,11 @@ class _OperationCard extends StatelessWidget {
           _iconForType(tipo),
           color: resultColor,
         ),
-        title: Text(
-            organismo.isNotEmpty ? organismo : _labelForType(tipo)),
+        title: Text(organismo.isNotEmpty ? organismo : _labelForType(l10n, tipo)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(_labelForType(tipo), style: theme.textTheme.bodySmall),
+            Text(_labelForType(l10n, tipo), style: theme.textTheme.bodySmall),
             if (fecha.isNotEmpty)
               Text(
                 fecha,
@@ -184,12 +149,12 @@ class _OperationCard extends StatelessWidget {
 
   /// Decode the 3-digit binary type bitmask:
   /// bit 0 (rightmost) = DNI/NIE, bit 1 = QR, bit 2 = SMS.
-  static String _labelForType(String tipo) {
-    if (tipo.length != 3) return tipo.isNotEmpty ? tipo : 'Unknown';
+  static String _labelForType(AppLocalizations l10n, String tipo) {
+    if (tipo.length != 3) return tipo.isNotEmpty ? tipo : l10n.unknownType;
     final labels = <String>[];
-    if (tipo[2] == '1') labels.add('DNI/NIE');
-    if (tipo[1] == '1') labels.add('QR');
-    if (tipo[0] == '1') labels.add('SMS');
+    if (tipo[2] == '1') labels.add(l10n.typeDniNie);
+    if (tipo[1] == '1') labels.add(l10n.typeQr);
+    if (tipo[0] == '1') labels.add(l10n.typeSms);
     return labels.isNotEmpty ? labels.join(' + ') : tipo;
   }
 

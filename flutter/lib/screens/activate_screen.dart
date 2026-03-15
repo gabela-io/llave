@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../src/routes.dart';
 
 class ActivateScreen extends ConsumerWidget {
   const ActivateScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -24,7 +28,7 @@ class ActivateScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                'Activate Llave',
+                l10n.activateLlave,
                 style: theme.textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -32,7 +36,7 @@ class ActivateScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Register this device with your Cl@ve account.',
+                l10n.registerDevice,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -40,16 +44,16 @@ class ActivateScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 40),
               FilledButton.icon(
-                onPressed: () => context.go('/dni-auth'),
+                onPressed: () => context.go(AppRoutes.dniAuth),
                 icon: const Icon(Icons.badge),
-                label: const Text('Activate with DNI/NIE'),
+                label: Text(l10n.activateWithDni),
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
               ),
               const SizedBox(height: 16),
               Text(
-                'You will need the data printed on your physical DNI/NIE card and access to the phone number registered with Cl@ve.',
+                l10n.dniActivateDescription,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),

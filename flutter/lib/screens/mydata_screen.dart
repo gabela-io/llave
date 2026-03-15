@@ -1,8 +1,10 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 
+import '../src/api_helpers.dart';
+import '../src/llave_bridge.dart';
 import '../src/rust/api/api.dart' as native_ffi;
+import '../widgets/data_screen_scaffold.dart';
 
 class MyDataScreen extends StatefulWidget {
   const MyDataScreen({super.key});
@@ -28,96 +30,90 @@ class _MyDataScreenState extends State<MyDataScreen> {
       _error = null;
     });
 
-    try {
-      final result = await native_ffi.getMyData();
-      if (!result.ok) {
-        setState(() => _error = result.error ?? 'Unknown error');
-        return;
-      }
-      final parsed = jsonDecode(result.data);
-      setState(() => _data = parsed is Map<String, dynamic> ? parsed : {'raw': parsed});
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    await handleApiCall(
+      apiCall: () async {
+        final r = await native_ffi.getMyData();
+        return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
+      },
+      setLoading: (v) {
+        if (mounted) setState(() => _loading = v);
+      },
+      setError: (e) {
+        if (mounted) setState(() => _error = e);
+      },
+      context: context,
+      onData: (decoded) {
+        setState(() =>
+            _data = decoded is Map<String, dynamic> ? decoded : {'raw': decoded});
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Data'),
+        title: Text(l10n.myDataTitle),
         actions: [
           IconButton(
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: l10n.refresh,
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
-                        const SizedBox(height: 16),
-                        Text(_error!, textAlign: TextAlign.center),
-                        const SizedBox(height: 16),
-                        FilledButton(onPressed: _load, child: const Text('Retry')),
-                      ],
-                    ),
-                  ),
-                )
-              : _data == null
-                  ? const Center(child: Text('No data'))
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView(
-                        padding: const EdgeInsets.all(16),
+      body: DataScreenScaffold(
+        loading: _loading,
+        error: _error,
+        isEmpty: _data == null,
+        onRetry: _load,
+        emptyIcon: Icons.person_outline,
+        emptyTitle: l10n.noData,
+        child: RefreshIndicator(
+          onRefresh: _load,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(20),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(Icons.person, color: theme.colorScheme.primary),
-                                      const SizedBox(width: 12),
-                                      Text('Account Information',
-                                          style: theme.textTheme.titleMedium),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  ..._buildFields(theme),
-                                ],
-                              ),
-                            ),
-                          ),
+                          Icon(Icons.person,
+                              color: theme.colorScheme.primary),
+                          const SizedBox(width: 12),
+                          Text(l10n.accountInformation,
+                              style: theme.textTheme.titleMedium),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: 16),
+                      ..._buildFields(l10n, theme),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  List<Widget> _buildFields(ThemeData theme) {
+  List<Widget> _buildFields(AppLocalizations l10n, ThemeData theme) {
     if (_data == null) return [];
 
     // Fields from ClaveCheckMyDataSv + session NIF.
     final labels = {
-      'nif': 'NIF',
-      'email': 'Email',
-      'numTelefono': 'Phone',
-      'nivelRegistro': 'Registration Level',
+      'nif': l10n.nifLabel,
+      'email': l10n.emailLabel,
+      'numTelefono': l10n.phoneLabel,
+      'nivelRegistro': l10n.registrationLevel,
     };
 
     final widgets = <Widget>[];

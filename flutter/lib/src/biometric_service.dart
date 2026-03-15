@@ -66,10 +66,12 @@ class BiometricService {
 
   /// Prompt the user for biometric authentication and return the stored PIN
   /// on success. Returns `null` if authentication fails or is cancelled.
-  static Future<String?> authenticate() async {
+  static Future<String?> authenticate({
+    required String localizedReason,
+  }) async {
     try {
       final didAuth = await _auth.authenticate(
-        localizedReason: 'Unlock Llave with biometrics',
+        localizedReason: localizedReason,
         options: const AuthenticationOptions(
           stickyAuth: true,
           biometricOnly: true,

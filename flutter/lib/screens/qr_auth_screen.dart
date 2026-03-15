@@ -1,13 +1,14 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import '../src/ip_rate_limit.dart';
+import '../src/api_helpers.dart';
 import '../src/llave_bridge.dart';
+import '../src/routes.dart';
 
 /// Whether the current platform supports camera-based QR scanning.
 bool get _hasCameraSupport => Platform.isAndroid || Platform.isIOS;
@@ -47,24 +48,25 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
       _success = false;
     });
 
-    try {
-      final bridge = ref.read(llaveBridgeProvider);
-      final result = await bridge.qrAuthenticate(value.trim());
+    final bridge = ref.read(llaveBridgeProvider);
 
-      if (!mounted) return;
-
-      if (result.ok) {
-        // Parse the peticion from the response.
-        final data = jsonDecode(result.data);
-        final peticion = data is Map<String, dynamic>
-            ? (data['peticion'] as Map<String, dynamic>?)
+    await handleApiCall(
+      apiCall: () => bridge.qrAuthenticate(value.trim()),
+      setLoading: (v) {
+        if (mounted) setState(() => _loading = v);
+      },
+      setError: (e) {
+        if (mounted) setState(() => _error = e);
+      },
+      context: context,
+      onData: (decoded) async {
+        final l10n = AppLocalizations.of(context)!;
+        final peticion = decoded is Map<String, dynamic>
+            ? (decoded['peticion'] as Map<String, dynamic>?)
             : null;
 
         if (peticion == null) {
-          setState(() {
-            _loading = false;
-            _error = 'Invalid response: no petition data';
-          });
+          setState(() => _error = l10n.invalidPetitionData);
           return;
         }
 
@@ -75,10 +77,8 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
 
         setState(() => _loading = false);
 
-        // Show confirmation dialog.
         if (!mounted) return;
         final confirmed = await _showConfirmDialog(organismo, tipo);
-
         if (!mounted) return;
 
         if (confirmed == true) {
@@ -86,49 +86,31 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
         } else {
           await _rejectRequest(bridge, token, idpCode);
         }
-      } else {
-        final err = result.error ?? 'Authentication failed';
-        setState(() {
-          _loading = false;
-          _error = err;
-        });
-        if (mounted && isIpRateLimited(err)) {
-          showIpRateLimitBanner(context);
-        }
-      }
-    } catch (e) {
-      if (!mounted) return;
-      final err = e.toString();
-      setState(() {
-        _loading = false;
-        _error = err;
-      });
-      if (isIpRateLimited(err)) {
-        showIpRateLimitBanner(context);
-      }
-    }
+      },
+    );
   }
 
   Future<bool?> _showConfirmDialog(String organismo, String tipo) {
+    final l10n = AppLocalizations.of(context)!;
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.verified_user, size: 40),
-        title: const Text('Confirm Authentication'),
+        title: Text(l10n.confirmAuthTitle),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('An authentication request has been received:'),
+            Text(l10n.authRequestReceived),
             const SizedBox(height: 16),
             if (organismo.isNotEmpty) ...[
-              Text('Organization', style: Theme.of(ctx).textTheme.labelSmall),
+              Text(l10n.organizationLabel, style: Theme.of(ctx).textTheme.labelSmall),
               Text(organismo, style: Theme.of(ctx).textTheme.bodyLarge),
               const SizedBox(height: 8),
             ],
             if (tipo.isNotEmpty) ...[
-              Text('Type', style: Theme.of(ctx).textTheme.labelSmall),
+              Text(l10n.typeLabel, style: Theme.of(ctx).textTheme.labelSmall),
               Text(tipo, style: Theme.of(ctx).textTheme.bodyLarge),
             ],
           ],
@@ -136,11 +118,11 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Reject'),
+            child: Text(l10n.reject),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm'),
+            child: Text(l10n.confirm),
           ),
         ],
       ),
@@ -154,37 +136,19 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
       _error = null;
     });
 
-    try {
-      final result = await bridge.confirmRequest(token, idpCode);
-
-      if (!mounted) return;
-
-      if (result.ok) {
-        setState(() {
-          _loading = false;
-          _success = true;
-        });
-      } else {
-        final err = result.error ?? 'Confirmation failed';
-        setState(() {
-          _loading = false;
-          _error = err;
-        });
-        if (mounted && isIpRateLimited(err)) {
-          showIpRateLimitBanner(context);
-        }
-      }
-    } catch (e) {
-      if (!mounted) return;
-      final err = e.toString();
-      setState(() {
-        _loading = false;
-        _error = err;
-      });
-      if (isIpRateLimited(err)) {
-        showIpRateLimitBanner(context);
-      }
-    }
+    await handleApiCall(
+      apiCall: () => bridge.confirmRequest(token, idpCode),
+      setLoading: (v) {
+        if (mounted) setState(() => _loading = v);
+      },
+      setError: (e) {
+        if (mounted) setState(() => _error = e);
+      },
+      context: context,
+      onData: (_) {
+        setState(() => _success = true);
+      },
+    );
   }
 
   Future<void> _rejectRequest(
@@ -217,44 +181,45 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/'),
+          onPressed: () => context.go(AppRoutes.home),
         ),
-        title: const Text('QR Authentication'),
+        title: Text(l10n.qrAuthTitle),
         actions: [
           if (_hasCameraSupport)
             IconButton(
               icon: Icon(_useManualInput ? Icons.camera_alt : Icons.keyboard),
-              tooltip: _useManualInput ? 'Use camera' : 'Enter manually',
+              tooltip: _useManualInput ? l10n.useCamera : l10n.enterManually,
               onPressed: () =>
                   setState(() => _useManualInput = !_useManualInput),
             ),
         ],
       ),
       body: _success
-          ? _buildSuccessView(theme)
+          ? _buildSuccessView(theme, l10n)
           : _useManualInput
-              ? _buildManualInput(theme)
-              : _buildCameraScanner(theme),
+              ? _buildManualInput(theme, l10n)
+              : _buildCameraScanner(theme, l10n),
     );
   }
 
-  Widget _buildSuccessView(ThemeData theme) {
+  Widget _buildSuccessView(ThemeData theme, AppLocalizations l10n) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.check_circle, size: 64, color: Colors.green),
+            const Icon(Icons.check_circle, size: 64, color: Colors.green),
             const SizedBox(height: 16),
             Text(
-              'QR authentication successful',
+              l10n.qrSuccess,
               style: theme.textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
@@ -265,7 +230,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
                 _controller.clear();
               }),
               icon: const Icon(Icons.qr_code),
-              label: const Text('Scan another'),
+              label: Text(l10n.scanAnother),
             ),
           ],
         ),
@@ -273,7 +238,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
     );
   }
 
-  Widget _buildCameraScanner(ThemeData theme) {
+  Widget _buildCameraScanner(ThemeData theme, AppLocalizations l10n) {
     return Column(
       children: [
         Expanded(
@@ -335,8 +300,8 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
               ] else
                 Text(
                   _loading
-                      ? 'Authenticating...'
-                      : 'Point your camera at a Cl@ve QR code',
+                      ? l10n.authenticating
+                      : l10n.pointCamera,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -349,7 +314,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
     );
   }
 
-  Widget _buildManualInput(ThemeData theme) {
+  Widget _buildManualInput(ThemeData theme, AppLocalizations l10n) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -359,13 +324,13 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
             Icon(Icons.qr_code_2, size: 64, color: theme.colorScheme.primary),
             const SizedBox(height: 16),
             Text(
-              'QR Code Authentication',
+              l10n.qrCodeAuthentication,
               style: theme.textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              'Paste the QR code value from a Cl@ve authentication request.',
+              l10n.pasteQrHint,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -403,11 +368,11 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
               constraints: const BoxConstraints(maxWidth: 400),
               child: TextField(
                 controller: _controller,
-                decoration: const InputDecoration(
-                  labelText: 'QR code value',
-                  hintText: 'Paste QR content here',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.qr_code),
+                decoration: InputDecoration(
+                  labelText: l10n.qrCodeValueLabel,
+                  hintText: l10n.pasteQrContent,
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.qr_code),
                 ),
                 maxLines: 3,
                 minLines: 1,
@@ -428,7 +393,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
                           strokeWidth: 2, color: Colors.white),
                     )
                   : const Icon(Icons.login),
-              label: Text(_loading ? 'Authenticating...' : 'Authenticate'),
+              label: Text(_loading ? l10n.authenticating : l10n.authenticate),
             ),
           ],
         ),

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../src/auth_provider.dart';
 import '../src/biometric_service.dart';
+import '../src/routes.dart';
 
 /// PIN entry screen shown when an encrypted session exists on disk.
 class UnlockScreen extends ConsumerStatefulWidget {
@@ -44,23 +46,26 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
   }
 
   Future<void> _unlockWithBiometrics() async {
+    final l10n = AppLocalizations.of(context)!;
     setState(() {
       _error = null;
       _loading = true;
     });
 
     try {
-      final pin = await BiometricService.authenticate();
+      final pin = await BiometricService.authenticate(
+        localizedReason: l10n.biometricReason,
+      );
       if (pin == null) {
         if (mounted) setState(() => _loading = false);
         return;
       }
       await ref.read(authProvider.notifier).unlock(pin);
-      if (mounted) context.go('/');
+      if (mounted) context.go(AppRoutes.home);
     } catch (_) {
       if (mounted) {
         setState(() {
-          _error = 'Biometric unlock failed. Enter your PIN.';
+          _error = l10n.biometricFailed;
           _loading = false;
         });
       }
@@ -68,6 +73,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
   }
 
   Future<void> _unlock() async {
+    final l10n = AppLocalizations.of(context)!;
     final pin = _pinController.text;
     if (pin.isEmpty) return;
 
@@ -78,9 +84,9 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
 
     try {
       await ref.read(authProvider.notifier).unlock(pin);
-      if (mounted) context.go('/');
+      if (mounted) context.go(AppRoutes.home);
     } catch (_) {
-      setState(() => _error = 'Wrong PIN. Try again.');
+      setState(() => _error = l10n.wrongPinTryAgain);
       _pinController.clear();
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -88,22 +94,20 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
   }
 
   Future<void> _forgotPin() async {
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Forgot PIN?'),
-        content: const Text(
-          'This will erase your saved session. '
-          'You will need to activate your device again.',
-        ),
+        title: Text(l10n.forgotPinTitle),
+        content: Text(l10n.forgotPinMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Erase & Reset'),
+            child: Text(l10n.eraseAndReset),
           ),
         ],
       ),
@@ -112,12 +116,13 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
     if (confirmed == true) {
       await BiometricService.disable();
       await ref.read(authProvider.notifier).logout();
-      if (mounted) context.go('/activate');
+      if (mounted) context.go(AppRoutes.activate);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -136,7 +141,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  'Llave',
+                  l10n.appName,
                   style: theme.textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: theme.colorScheme.primary,
@@ -144,7 +149,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Enter your PIN to unlock',
+                  l10n.enterPinToUnlock,
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -158,7 +163,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _unlock(),
                   decoration: InputDecoration(
-                    labelText: 'PIN',
+                    labelText: l10n.pinLabel,
                     border: const OutlineInputBorder(),
                     errorText: _error,
                     suffixIcon: IconButton(
@@ -181,7 +186,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: Colors.white),
                           )
-                        : const Text('Unlock'),
+                        : Text(l10n.unlock),
                   ),
                 ),
                 if (_biometricAvailable) ...[
@@ -191,14 +196,14 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
                     child: OutlinedButton.icon(
                       onPressed: _loading ? null : _unlockWithBiometrics,
                       icon: const Icon(Icons.fingerprint),
-                      label: const Text('Unlock with biometrics'),
+                      label: Text(l10n.unlockWithBiometrics),
                     ),
                   ),
                 ],
                 const SizedBox(height: 16),
                 TextButton(
                   onPressed: _forgotPin,
-                  child: const Text('Forgot PIN?'),
+                  child: Text(l10n.forgotPin),
                 ),
               ],
             ),

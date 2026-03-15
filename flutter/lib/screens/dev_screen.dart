@@ -35,7 +35,7 @@ class _DevScreenState extends ConsumerState<DevScreen> {
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
           // Bridge info + toggle
-          _SectionHeader('Bridge'),
+          const _SectionHeader('Bridge'),
           SwitchListTile(
             secondary: Icon(
               isMock ? Icons.science : Icons.link,
@@ -55,7 +55,7 @@ class _DevScreenState extends ConsumerState<DevScreen> {
           const Divider(),
 
           // Auth state
-          _SectionHeader('Auth State'),
+          const _SectionHeader('Auth State'),
           ListTile(
             leading: Icon(_authIcon(auth), color: _authColor(auth)),
             title: Text(_authLabel(auth)),
@@ -71,7 +71,7 @@ class _DevScreenState extends ConsumerState<DevScreen> {
           const Divider(),
 
           // Quick actions
-          _SectionHeader('Quick Actions'),
+          const _SectionHeader('Quick Actions'),
           _ActionTile(
             icon: Icons.person_add,
             title: 'Activate with test NIF',
@@ -180,7 +180,7 @@ class _DevScreenState extends ConsumerState<DevScreen> {
           const Divider(),
 
           // Destructive actions
-          _SectionHeader('Reset'),
+          const _SectionHeader('Reset'),
           _ActionTile(
             icon: Icons.logout,
             title: 'Logout',
@@ -199,7 +199,7 @@ class _DevScreenState extends ConsumerState<DevScreen> {
 
           // Result output
           if (_lastResult != null) ...[
-            _SectionHeader('Last Result'),
+            const _SectionHeader('Last Result'),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Card(

@@ -191,7 +191,7 @@ class MockLlaveBridge implements LlaveBridge {
   Future<LlaveApiResult> getMyData() async {
     _requireSession();
     await Future<void>.delayed(const Duration(milliseconds: 600));
-    return LlaveApiResult(
+    return const LlaveApiResult(
       ok: true,
       data: '{"nombre":"Mock User","telefono":"***1234","nivelAcceso":"AVANZADO"}',
     );
@@ -246,7 +246,7 @@ class MockLlaveBridge implements LlaveBridge {
   @override
   Future<LlaveApiResult> dniAuthenticate(String nif, String fecha, String soporte) async {
     await Future<void>.delayed(const Duration(milliseconds: 800));
-    return LlaveApiResult(
+    return const LlaveApiResult(
       ok: true,
       data: '{"movil":"***1234","hora_peticion":"12:00","timestamp_alta_sms":"mock_ts","token_clave_movil_sms":"mock_token","cookies_json":"[]","registrado":"S","nivel_registro":"A","telefono":"S"}',
     );

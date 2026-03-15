@@ -1,11 +1,12 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../l10n/app_localizations.dart';
+import '../src/api_helpers.dart';
 import '../src/auth_provider.dart';
-import '../src/ip_rate_limit.dart';
+import '../src/llave_bridge.dart';
+import '../src/routes.dart';
 import '../src/rust/api/api.dart' as native_ffi;
 
 class HomeScreen extends ConsumerWidget {
@@ -13,17 +14,18 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context)!;
     final session = ref.watch(currentSessionProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Llave'),
+        title: Text(l10n.homeTitle),
         centerTitle: true,
         actions: [
           if (session != null)
             IconButton(
               icon: const Icon(Icons.logout),
-              tooltip: 'Log out',
+              tooltip: l10n.logOut,
               onPressed: () => _confirmLogout(context, ref),
             ),
         ],
@@ -35,21 +37,21 @@ class HomeScreen extends ConsumerWidget {
   }
 
   void _confirmLogout(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Log out?'),
-        content:
-            const Text('This will clear your session. You can re-activate later.'),
+        title: Text(l10n.logOutTitle),
+        content: Text(l10n.logOutMessage),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: Text(l10n.cancel)),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               ref.read(authProvider.notifier).logout();
             },
-            child: const Text('Log out'),
+            child: Text(l10n.logOut),
           ),
         ],
       ),
@@ -60,6 +62,7 @@ class HomeScreen extends ConsumerWidget {
 class _UnauthenticatedBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     return Center(
       child: Padding(
@@ -71,21 +74,21 @@ class _UnauthenticatedBody extends StatelessWidget {
                 color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(height: 16),
             Text(
-              'No active session',
+              l10n.noActiveSession,
               style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
             Text(
-              'Activate your device to get started.',
+              l10n.activateToStart,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: () => GoRouter.of(context).go('/activate'),
+              onPressed: () => context.go(AppRoutes.activate),
               icon: const Icon(Icons.login),
-              label: const Text('Activate Device'),
+              label: Text(l10n.activateDevice),
             ),
           ],
         ),
@@ -118,38 +121,34 @@ class _AuthenticatedBodyState extends State<_AuthenticatedBody> {
       _loading = true;
       _error = null;
     });
-    try {
-      final result = await native_ffi.getMyData();
-      if (!result.ok) {
-        final err = result.error ?? 'Could not load account data';
-        setState(() => _error = err);
-        if (mounted && isIpRateLimited(err)) {
-          showIpRateLimitBanner(context);
-        }
-        return;
-      }
-      final parsed = jsonDecode(result.data);
-      setState(() =>
-          _accountData = parsed is Map<String, dynamic> ? parsed : null);
-    } catch (e) {
-      final err = e.toString();
-      setState(() => _error = err);
-      if (mounted && isIpRateLimited(err)) {
-        showIpRateLimitBanner(context);
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+
+    await handleApiCall(
+      apiCall: () async {
+        final r = await native_ffi.getMyData();
+        return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
+      },
+      setLoading: (v) {
+        if (mounted) setState(() => _loading = v);
+      },
+      setError: (e) {
+        if (mounted) setState(() => _error = e);
+      },
+      context: context,
+      onData: (decoded) {
+        setState(() =>
+            _accountData = decoded is Map<String, dynamic> ? decoded : null);
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Account card
         _AccountCard(
           session: widget.session,
           accountData: _accountData,
@@ -158,15 +157,13 @@ class _AuthenticatedBodyState extends State<_AuthenticatedBody> {
           onRetry: _loadAccountData,
         ),
         const SizedBox(height: 20),
-
-        // QR Auth — primary CTA
         SizedBox(
           height: 56,
           child: FilledButton.icon(
-            onPressed: () => context.go('/qr'),
+            onPressed: () => context.go(AppRoutes.qr),
             icon: const Icon(Icons.qr_code_2, size: 24),
             label: Text(
-              'QR Authentication',
+              l10n.qrAuthentication,
               style: theme.textTheme.titleMedium?.copyWith(
                 color: theme.colorScheme.onPrimary,
               ),
@@ -195,6 +192,7 @@ class _AccountCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
 
     return Card(
@@ -215,7 +213,7 @@ class _AccountCard extends StatelessWidget {
                           style: theme.textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.bold)),
                       Text(
-                        'Active since ${_formatDate(session.createdAt)}',
+                        l10n.activeSince(_formatDate(session.createdAt)),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -241,17 +239,16 @@ class _AccountCard extends StatelessWidget {
                   ),
               ],
             ),
-            // Show extra fields from API if loaded
             if (accountData != null) ...[
               const SizedBox(height: 12),
               if (accountData!['email'] != null)
-                _AccountRow(label: 'Email', value: accountData!['email'].toString()),
+                _AccountRow(label: l10n.emailLabel, value: accountData!['email'].toString()),
               if (accountData!['numTelefono'] != null)
-                _AccountRow(label: 'Phone', value: accountData!['numTelefono'].toString()),
+                _AccountRow(label: l10n.phoneLabel, value: accountData!['numTelefono'].toString()),
               if (accountData!['nivelRegistro'] != null)
                 _AccountRow(
-                    label: 'Level',
-                    value: _registrationLevel(accountData!['nivelRegistro'].toString())),
+                    label: l10n.levelLabel,
+                    value: _registrationLevel(l10n, accountData!['nivelRegistro'].toString())),
             ],
             if (error != null && accountData == null)
               Padding(
@@ -269,10 +266,10 @@ class _AccountCard extends StatelessWidget {
     );
   }
 
-  static String _registrationLevel(String level) => switch (level) {
-        '1' => 'Basic',
-        '2' => 'Advanced',
-        '3' => 'Superior',
+  static String _registrationLevel(AppLocalizations l10n, String level) => switch (level) {
+        '1' => l10n.registrationBasic,
+        '2' => l10n.registrationAdvanced,
+        '3' => l10n.registrationSuperior,
         _ => level,
       };
 

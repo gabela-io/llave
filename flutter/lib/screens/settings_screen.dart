@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../src/auth_provider.dart';
 import '../src/biometric_service.dart';
+import '../src/routes.dart';
 import '../src/llave_bridge.dart';
 import '../src/proxy_provider.dart';
 import '../src/theme_provider.dart';
@@ -14,28 +16,29 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final themeMode = ref.watch(themeModeProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: Text(l10n.settingsTitle)),
       body: ListView(
         children: [
           const SizedBox(height: 8),
-          _SectionHeader('Appearance'),
+          _SectionHeader(l10n.appearance),
           ListTile(
             leading: Icon(_themeModeIcon(themeMode)),
-            title: const Text('Theme'),
-            subtitle: Text(_themeModeLabel(themeMode)),
+            title: Text(l10n.theme),
+            subtitle: Text(_themeModeLabel(l10n, themeMode)),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _showThemePicker(context, ref),
           ),
           const Divider(),
-          _SectionHeader('Security'),
+          _SectionHeader(l10n.security),
           ListTile(
             leading: const Icon(Icons.pin_outlined),
-            title: const Text('Change PIN'),
-            subtitle: const Text('Update your unlock PIN'),
+            title: Text(l10n.changePinTitle),
+            subtitle: Text(l10n.updatePinSubtitle),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _showChangePinDialog(context, ref),
           ),
@@ -44,8 +47,8 @@ class SettingsScreen extends ConsumerWidget {
                   if (!state.available) return const SizedBox.shrink();
                   return SwitchListTile(
                     secondary: const Icon(Icons.fingerprint),
-                    title: const Text('Biometric unlock'),
-                    subtitle: const Text('Use fingerprint or face to unlock'),
+                    title: Text(l10n.biometricUnlock),
+                    subtitle: Text(l10n.biometricSubtitle),
                     value: state.enabled,
                     onChanged: (value) async {
                       if (value) {
@@ -61,41 +64,41 @@ class SettingsScreen extends ConsumerWidget {
                 error: (_, __) => const SizedBox.shrink(),
               ),
           const Divider(),
-          _SectionHeader('Network'),
+          _SectionHeader(l10n.network),
           _ProxyTile(),
           const Divider(),
-          _SectionHeader('Device'),
+          _SectionHeader(l10n.device),
           ListTile(
             leading: const Icon(Icons.delete_outline),
-            title: const Text('Clear Session'),
-            subtitle: const Text('Log out and clear saved credentials'),
+            title: Text(l10n.clearSession),
+            subtitle: Text(l10n.clearSessionSubtitle),
             onTap: () async {
               await ref.read(authProvider.notifier).logout();
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Session cleared')),
+                  SnackBar(content: Text(l10n.sessionCleared)),
                 );
               }
             },
           ),
           ListTile(
             leading: Icon(Icons.logout, color: theme.colorScheme.error),
-            title: Text('Deactivate Device', style: TextStyle(color: theme.colorScheme.error)),
-            subtitle: const Text('Remove this device from Llave'),
+            title: Text(l10n.deactivateDevice, style: TextStyle(color: theme.colorScheme.error)),
+            subtitle: Text(l10n.deactivateSubtitle),
             onTap: () {
               showDialog(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  title: const Text('Deactivate Device?'),
-                  content: const Text('This will remove your device registration with Llave. You will need to activate again.'),
+                  title: Text(l10n.deactivateTitle),
+                  content: Text(l10n.deactivateMessage),
                   actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.cancel)),
                     FilledButton(
                       onPressed: () {
                         Navigator.pop(ctx);
                         ref.read(authProvider.notifier).deactivate();
                       },
-                      child: const Text('Deactivate'),
+                      child: Text(l10n.deactivate),
                     ),
                   ],
                 ),
@@ -103,20 +106,20 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           const Divider(),
-          _SectionHeader('About'),
-          const ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('Version'),
-            subtitle: Text('0.1.0'),
+          _SectionHeader(l10n.about),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: Text(l10n.version),
+            subtitle: const Text('0.1.0'),
           ),
-          const ListTile(
-            leading: Icon(Icons.code),
-            title: Text('Powered by'),
-            subtitle: Text('Rust core (llave-core) via flutter_rust_bridge'),
+          ListTile(
+            leading: const Icon(Icons.code),
+            title: Text(l10n.poweredBy),
+            subtitle: Text(l10n.poweredByValue),
           ),
           if (kDebugMode || kProfileMode) ...[
             const Divider(),
-            _SectionHeader('Developer'),
+            _SectionHeader(l10n.developer),
             ListTile(
               leading: Icon(
                 Icons.science,
@@ -124,14 +127,14 @@ class SettingsScreen extends ConsumerWidget {
                     ? Colors.orange
                     : Colors.green,
               ),
-              title: const Text('Developer Tools'),
+              title: Text(l10n.developerTools),
               subtitle: Text(
                 ref.watch(llaveBridgeProvider) is MockLlaveBridge
-                    ? 'Mock bridge active'
-                    : 'Real bridge active',
+                    ? l10n.mockBridgeActive
+                    : l10n.realBridgeActive,
               ),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.go('/dev'),
+              onTap: () => context.go(AppRoutes.dev),
             ),
           ],
         ],
@@ -145,37 +148,38 @@ class SettingsScreen extends ConsumerWidget {
         ThemeMode.dark => Icons.dark_mode,
       };
 
-  static String _themeModeLabel(ThemeMode mode) => switch (mode) {
-        ThemeMode.system => 'System default',
-        ThemeMode.light => 'Light',
-        ThemeMode.dark => 'Dark',
+  static String _themeModeLabel(AppLocalizations l10n, ThemeMode mode) => switch (mode) {
+        ThemeMode.system => l10n.themeSystem,
+        ThemeMode.light => l10n.themeLight,
+        ThemeMode.dark => l10n.themeDark,
       };
 
   Future<void> _enableBiometrics(BuildContext context, WidgetRef ref) async {
+    final l10n = AppLocalizations.of(context)!;
     final pinCtrl = TextEditingController();
     final pin = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Enter your PIN'),
+        title: Text(l10n.enterYourPin),
         content: TextField(
           controller: pinCtrl,
           obscureText: true,
           keyboardType: TextInputType.number,
           autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Current PIN',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: l10n.currentPinLabel,
+            border: const OutlineInputBorder(),
           ),
           onSubmitted: (value) => Navigator.pop(ctx, value),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, pinCtrl.text),
-            child: const Text('Confirm'),
+            child: Text(l10n.confirm),
           ),
         ],
       ),
@@ -189,19 +193,20 @@ class SettingsScreen extends ConsumerWidget {
       await BiometricService.enable(pin);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Biometric unlock enabled')),
+          SnackBar(content: Text(l10n.biometricEnabled)),
         );
       }
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Wrong PIN')),
+          SnackBar(content: Text(l10n.wrongPin)),
         );
       }
     }
   }
 
   void _showChangePinDialog(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context)!;
     final oldPinCtrl = TextEditingController();
     final newPinCtrl = TextEditingController();
     final confirmCtrl = TextEditingController();
@@ -209,7 +214,7 @@ class SettingsScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Change PIN'),
+        title: Text(l10n.changePinTitle),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -217,9 +222,9 @@ class SettingsScreen extends ConsumerWidget {
               controller: oldPinCtrl,
               obscureText: true,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Current PIN',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.currentPinLabel,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -227,9 +232,9 @@ class SettingsScreen extends ConsumerWidget {
               controller: newPinCtrl,
               obscureText: true,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'New PIN',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.newPinLabel,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -237,9 +242,9 @@ class SettingsScreen extends ConsumerWidget {
               controller: confirmCtrl,
               obscureText: true,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Confirm New PIN',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.confirmNewPinLabel,
+                border: const OutlineInputBorder(),
               ),
             ),
           ],
@@ -247,7 +252,7 @@ class SettingsScreen extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () async {
@@ -258,7 +263,7 @@ class SettingsScreen extends ConsumerWidget {
               if (newPin.length < 4) {
                 if (ctx.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('PIN must be at least 4 characters')),
+                    SnackBar(content: Text(l10n.pinMinLength)),
                   );
                 }
                 return;
@@ -266,7 +271,7 @@ class SettingsScreen extends ConsumerWidget {
               if (newPin != confirm) {
                 if (ctx.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('New PINs do not match')),
+                    SnackBar(content: Text(l10n.pinsDoNotMatch)),
                   );
                 }
                 return;
@@ -278,18 +283,18 @@ class SettingsScreen extends ConsumerWidget {
                 await BiometricService.updatePin(newPin);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('PIN changed successfully')),
+                    SnackBar(content: Text(l10n.pinChangedSuccess)),
                   );
                 }
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to change PIN: $e')),
+                    SnackBar(content: Text(l10n.pinChangeFailed(e.toString()))),
                   );
                 }
               }
             },
-            child: const Text('Change'),
+            child: Text(l10n.change),
           ),
         ],
       ),
@@ -297,26 +302,33 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   void _showThemePicker(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context)!;
     final notifier = ref.read(themeModeProvider.notifier);
     final current = ref.read(themeModeProvider);
 
     showDialog(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Choose theme'),
-        children: [
-          for (final mode in ThemeMode.values)
-            RadioListTile<ThemeMode>(
-              title: Text(_themeModeLabel(mode)),
-              secondary: Icon(_themeModeIcon(mode)),
-              value: mode,
-              groupValue: current,
-              onChanged: (v) {
-                if (v != null) notifier.setMode(v);
-                Navigator.pop(ctx);
-              },
-            ),
-        ],
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.chooseTheme),
+        contentPadding: EdgeInsets.zero,
+        content: RadioGroup<ThemeMode>(
+          groupValue: current,
+          onChanged: (v) {
+            if (v != null) notifier.setMode(v);
+            Navigator.pop(ctx);
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final mode in ThemeMode.values)
+                RadioListTile<ThemeMode>(
+                  title: Text(_themeModeLabel(l10n, mode)),
+                  secondary: Icon(_themeModeIcon(mode)),
+                  value: mode,
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -343,32 +355,33 @@ class _SectionHeader extends StatelessWidget {
 class _ProxyTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context)!;
     final proxy = ref.watch(proxyProvider);
     final hasProxy = proxy != null && proxy.isNotEmpty;
 
     return ListTile(
       leading: Icon(hasProxy ? Icons.vpn_lock : Icons.public),
-      title: const Text('Proxy'),
-      subtitle: Text(hasProxy ? proxy : 'Direct connection'),
+      title: Text(l10n.proxy),
+      subtitle: Text(hasProxy ? proxy : l10n.directConnection),
       trailing: const Icon(Icons.chevron_right),
       onTap: () => _showProxyDialog(context, ref, proxy),
     );
   }
 
   void _showProxyDialog(BuildContext context, WidgetRef ref, String? current) {
+    final l10n = AppLocalizations.of(context)!;
     final controller = TextEditingController(text: current ?? '');
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Proxy'),
+        title: Text(l10n.proxy),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Route all AEAT requests through an HTTP, HTTPS, or SOCKS5 proxy. '
-              'Useful when your IP has been rate-limited.',
+              l10n.proxyDescription,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -377,11 +390,11 @@ class _ProxyTile extends ConsumerWidget {
             TextField(
               controller: controller,
               autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Proxy URL',
-                hintText: 'socks5://127.0.0.1:1080',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.link),
+              decoration: InputDecoration(
+                labelText: l10n.proxyUrlLabel,
+                hintText: l10n.proxyUrlHint,
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.link),
               ),
               onSubmitted: (_) {
                 Navigator.pop(ctx);
@@ -397,18 +410,18 @@ class _ProxyTile extends ConsumerWidget {
                 Navigator.pop(ctx);
                 _apply(context, ref, '');
               },
-              child: const Text('Clear'),
+              child: Text(l10n.clear),
             ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               _apply(context, ref, controller.text);
             },
-            child: const Text('Save'),
+            child: Text(l10n.save),
           ),
         ],
       ),
@@ -416,12 +429,13 @@ class _ProxyTile extends ConsumerWidget {
   }
 
   void _apply(BuildContext context, WidgetRef ref, String value) {
+    final l10n = AppLocalizations.of(context)!;
     final url = value.trim().isEmpty ? null : value.trim();
     ref.read(proxyProvider.notifier).setProxy(url);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(url != null ? 'Proxy set to $url' : 'Proxy cleared'),
+          content: Text(url != null ? l10n.proxySetTo(url) : l10n.proxyCleared),
         ),
       );
     }

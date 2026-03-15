@@ -1,13 +1,15 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_auth/smart_auth.dart';
 
+import '../src/api_helpers.dart';
 import '../src/auth_provider.dart';
+import '../src/routes.dart';
 
 class DniAuthScreen extends ConsumerStatefulWidget {
   const DniAuthScreen({super.key});
@@ -62,6 +64,7 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
 
   /// Open a date picker and fill the date field in DD/MM/YYYY format.
   Future<void> _pickDate() async {
+    final l10n = AppLocalizations.of(context)!;
     // Try to parse an existing value as initial date.
     DateTime initial = DateTime.now();
     final text = _fechaController.text.trim();
@@ -76,7 +79,7 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
       initialDate: initial,
       firstDate: DateTime(2000),
       lastDate: DateTime(2040),
-      helpText: 'Fecha de validez del DNI',
+      helpText: l10n.fechaValidezLabel,
     );
     if (picked != null) {
       _fechaController.text =
@@ -95,39 +98,32 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
       _error = null;
     });
 
-    try {
-      final authNotifier = ref.read(authProvider.notifier);
-      final result = await authNotifier.dniAuthenticate(
+    final authNotifier = ref.read(authProvider.notifier);
+
+    await handleApiCall(
+      apiCall: () => authNotifier.dniAuthenticate(
         _nifController.text.trim(),
         _fechaController.text.trim(),
         '',
-      );
-
-      if (!mounted) return;
-
-      if (result.ok) {
-        final data = jsonDecode(result.data) as Map<String, dynamic>;
+      ),
+      setLoading: (v) {
+        if (mounted) setState(() => _loading = v);
+      },
+      setError: (e) {
+        if (mounted) setState(() => _error = e);
+      },
+      context: context,
+      onData: (decoded) {
+        final data = decoded as Map<String, dynamic>;
         setState(() {
-          _loading = false;
           _maskedPhone = data['movil'] as String?;
           _cookiesJson = data['cookies_json'] as String?;
           _timestampAltaSms = data['timestamp_alta_sms'] as String?;
           _tokenClaveMovilSms = data['token_clave_movil_sms'] as String?;
         });
         _listenForSmsCode();
-      } else {
-        setState(() {
-          _loading = false;
-          _error = result.error ?? 'Authentication failed';
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = e.toString();
-      });
-    }
+      },
+    );
   }
 
   /// Phase 2: Validate SMS PIN → activate device.
@@ -140,65 +136,57 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
       _error = null;
     });
 
-    try {
-      final authNotifier = ref.read(authProvider.notifier);
-      final result = await authNotifier.dniCompleteActivation(
+    final authNotifier = ref.read(authProvider.notifier);
+
+    await handleApiCall(
+      apiCall: () => authNotifier.dniCompleteActivation(
         _nifController.text.trim(),
         _cookiesJson ?? '',
         _timestampAltaSms ?? '',
         _tokenClaveMovilSms ?? '',
         pin,
-      );
-
-      if (!mounted) return;
-
-      if (result.ok) {
+      ),
+      setLoading: (v) {
+        if (mounted) setState(() => _loading = v);
+      },
+      setError: (e) {
+        if (mounted) setState(() => _error = e);
+      },
+      context: context,
+      onData: (_) {
         TextInput.finishAutofillContext();
-        setState(() {
-          _loading = false;
-          _activated = true;
-        });
-      } else {
-        setState(() {
-          _loading = false;
-          _error = result.error ?? 'Activation failed';
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = e.toString();
-      });
-    }
+        setState(() => _activated = true);
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('DNI/NIE Authentication'),
+        title: Text(l10n.dniAuthTitle),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/activate'),
+          onPressed: () => context.go(AppRoutes.activate),
         ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: _activated
-              ? _buildSuccessView(theme)
+              ? _buildSuccessView(theme, l10n)
               : _maskedPhone != null
-                  ? _buildSmsView(theme)
-                  : _buildForm(theme),
+                  ? _buildSmsView(theme, l10n)
+                  : _buildForm(theme, l10n),
         ),
       ),
     );
   }
 
-  Widget _buildSuccessView(ThemeData theme) {
+  Widget _buildSuccessView(ThemeData theme, AppLocalizations l10n) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -212,7 +200,7 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Device activated successfully!',
+                    l10n.deviceActivated,
                     style: TextStyle(color: theme.colorScheme.onPrimaryContainer),
                   ),
                 ),
@@ -222,15 +210,15 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
         ),
         const SizedBox(height: 16),
         FilledButton.icon(
-          onPressed: () => context.go('/'),
+          onPressed: () => context.go(AppRoutes.home),
           icon: const Icon(Icons.home),
-          label: const Text('Go to Home'),
+          label: Text(l10n.goToHome),
         ),
       ],
     );
   }
 
-  Widget _buildSmsView(ThemeData theme) {
+  Widget _buildSmsView(ThemeData theme, AppLocalizations l10n) {
     return AutofillGroup(
       child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -242,7 +230,7 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
         ),
         const SizedBox(height: 16),
         Text(
-          'SMS Verification',
+          l10n.smsVerification,
           style: theme.textTheme.headlineMedium?.copyWith(
             fontWeight: FontWeight.bold,
           ),
@@ -250,7 +238,7 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          'An SMS verification code has been sent to:',
+          l10n.smsSentTo,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -268,11 +256,11 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
         const SizedBox(height: 24),
         TextFormField(
           controller: _smsController,
-          decoration: const InputDecoration(
-            labelText: 'SMS Code',
-            hintText: 'Enter the code from your SMS',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.pin),
+          decoration: InputDecoration(
+            labelText: l10n.smsCodeLabel,
+            hintText: l10n.smsCodeHint,
+            border: const OutlineInputBorder(),
+            prefixIcon: const Icon(Icons.pin),
           ),
           keyboardType: TextInputType.number,
           autofillHints: const [AutofillHints.oneTimeCode],
@@ -316,7 +304,7 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
                       strokeWidth: 2, color: Colors.white),
                 )
               : const Icon(Icons.check),
-          label: Text(_loading ? 'Verifying...' : 'Verify & Activate'),
+          label: Text(_loading ? l10n.verifying : l10n.verifyActivate),
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
           ),
@@ -326,7 +314,7 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
     );
   }
 
-  Widget _buildForm(ThemeData theme) {
+  Widget _buildForm(ThemeData theme, AppLocalizations l10n) {
     return Form(
       key: _formKey,
       child: Column(
@@ -339,7 +327,7 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'DNI/NIE Login',
+            l10n.dniLogin,
             style: theme.textTheme.headlineMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -347,7 +335,7 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Authenticate using the data printed on your physical DNI/NIE card. No certificate or password needed.',
+            l10n.dniLoginDescription,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -358,17 +346,17 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
           // NIF field
           TextFormField(
             controller: _nifController,
-            decoration: const InputDecoration(
-              labelText: 'NIF (DNI/NIE)',
-              hintText: '12345678A',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.badge),
+            decoration: InputDecoration(
+              labelText: l10n.nifDniNie,
+              hintText: l10n.nifHint,
+              border: const OutlineInputBorder(),
+              prefixIcon: const Icon(Icons.badge),
             ),
             textCapitalization: TextCapitalization.characters,
             enabled: !_loading,
             validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'NIF is required';
-              if (v.trim().length < 8) return 'NIF must be at least 8 characters';
+              if (v == null || v.trim().isEmpty) return l10n.nifRequired;
+              if (v.trim().length < 8) return l10n.nifMinLength;
               return null;
             },
           ),
@@ -378,11 +366,11 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
           TextFormField(
             controller: _fechaController,
             decoration: InputDecoration(
-              labelText: 'Fecha de validez del DNI',
-              hintText: 'DD/MM/YYYY',
+              labelText: l10n.fechaValidezLabel,
+              hintText: l10n.ddMmYyyy,
               border: const OutlineInputBorder(),
               prefixIcon: const Icon(Icons.calendar_today),
-              helperText: 'Expiry date printed on your DNI/NIE card',
+              helperText: l10n.fechaHelperText,
               suffixIcon: (Platform.isAndroid || Platform.isIOS) && !_loading
                   ? IconButton(
                       icon: const Icon(Icons.edit_calendar),
@@ -397,10 +385,10 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
                 : null,
             enabled: !_loading,
             validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'Date is required';
+              if (v == null || v.trim().isEmpty) return l10n.dateRequired;
               final trimmed = v.trim();
               if (!RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(trimmed)) {
-                return 'Use DD/MM/YYYY format';
+                return l10n.useDdMmYyyy;
               }
               return null;
             },
@@ -444,7 +432,7 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
                         strokeWidth: 2, color: Colors.white),
                   )
                 : const Icon(Icons.login),
-            label: Text(_loading ? 'Authenticating...' : 'Authenticate'),
+            label: Text(_loading ? l10n.authenticating : l10n.authenticate),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),

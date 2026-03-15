@@ -1,0 +1,231 @@
+{
+  "@@locale": "en",
+
+  "cancel": "Cancel",
+  "retry": "Retry",
+  "refresh": "Refresh",
+  "confirm": "Confirm",
+  "reject": "Reject",
+  "save": "Save",
+  "clear": "Clear",
+  "change": "Change",
+  "authenticate": "Authenticate",
+  "authenticating": "Authenticating...",
+  "unknownError": "Unknown error",
+  "invalidResponse": "Invalid response from server",
+  "errorWithMessage": "Error: {error}",
+  "@errorWithMessage": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "dismiss": "Dismiss",
+  "enable": "Enable",
+  "loading": "Loading...",
+
+  "navHome": "Home",
+  "navPending": "Pending",
+  "navHistory": "History",
+  "navSettings": "Settings",
+  "scanQr": "Scan QR",
+
+  "homeTitle": "Llave",
+  "logOut": "Log out",
+  "logOutTitle": "Log out?",
+  "logOutMessage": "This will clear your session. You can re-activate later.",
+  "noActiveSession": "No active session",
+  "activateToStart": "Activate your device to get started.",
+  "activateDevice": "Activate Device",
+  "qrAuthentication": "QR Authentication",
+  "emailLabel": "Email",
+  "phoneLabel": "Phone",
+  "levelLabel": "Level",
+  "activeSince": "Active since {date}",
+  "@activeSince": {
+    "placeholders": {
+      "date": { "type": "String" }
+    }
+  },
+  "registrationBasic": "Basic",
+  "registrationAdvanced": "Advanced",
+  "registrationSuperior": "Superior",
+
+  "pendingTitle": "Pending Requests",
+  "pendingEmptyTitle": "No pending requests",
+  "pendingEmptySubtitle": "Authentication requests will appear here\nwhen detected by the server.",
+  "requestConfirmed": "Request confirmed",
+  "requestRejected": "Request rejected",
+  "failed": "Failed",
+  "providerCode": "Provider code: {code}",
+  "@providerCode": {
+    "placeholders": {
+      "code": { "type": "String" }
+    }
+  },
+  "actionRequestTitle": "{action} request?",
+  "@actionRequestTitle": {
+    "placeholders": {
+      "action": { "type": "String" }
+    }
+  },
+  "actionRequestMessage": "Are you sure you want to {action} this authentication request?",
+  "@actionRequestMessage": {
+    "placeholders": {
+      "action": { "type": "String" }
+    }
+  },
+
+  "historyTitle": "History",
+  "historyEmptyTitle": "No operations found",
+  "accepted": "Accepted",
+  "rejected": "Rejected",
+
+  "myDataTitle": "My Data",
+  "noData": "No data",
+  "accountInformation": "Account Information",
+  "nifLabel": "NIF",
+  "registrationLevel": "Registration Level",
+
+  "qrAuthTitle": "QR Authentication",
+  "useCamera": "Use camera",
+  "enterManually": "Enter manually",
+  "qrSuccess": "QR authentication successful",
+  "scanAnother": "Scan another",
+  "pointCamera": "Point your camera at a Cl@ve QR code",
+  "qrCodeAuthentication": "QR Code Authentication",
+  "pasteQrHint": "Paste the QR code value from a Cl@ve authentication request.",
+  "qrCodeValueLabel": "QR code value",
+  "pasteQrContent": "Paste QR content here",
+  "invalidPetitionData": "Invalid response: no petition data",
+  "confirmAuthTitle": "Confirm Authentication",
+  "authRequestReceived": "An authentication request has been received:",
+  "organizationLabel": "Organization",
+  "typeLabel": "Type",
+
+  "dniAuthTitle": "DNI/NIE Authentication",
+  "deviceActivated": "Device activated successfully!",
+  "goToHome": "Go to Home",
+  "smsVerification": "SMS Verification",
+  "smsSentTo": "An SMS verification code has been sent to:",
+  "smsCodeLabel": "SMS Code",
+  "smsCodeHint": "Enter the code from your SMS",
+  "verifying": "Verifying...",
+  "verifyActivate": "Verify & Activate",
+  "dniLogin": "DNI/NIE Login",
+  "dniLoginDescription": "Authenticate using the data printed on your physical DNI/NIE card. No certificate or password needed.",
+  "nifDniNie": "NIF (DNI/NIE)",
+  "nifHint": "12345678A",
+  "nifRequired": "NIF is required",
+  "nifMinLength": "NIF must be at least 8 characters",
+  "fechaValidezLabel": "Fecha de validez del DNI",
+  "ddMmYyyy": "DD/MM/YYYY",
+  "fechaHelperText": "Expiry date printed on your DNI/NIE card",
+  "dateRequired": "Date is required",
+  "useDdMmYyyy": "Use DD/MM/YYYY format",
+
+  "settingsTitle": "Settings",
+  "appearance": "Appearance",
+  "theme": "Theme",
+  "security": "Security",
+  "changePinTitle": "Change PIN",
+  "updatePinSubtitle": "Update your unlock PIN",
+  "biometricUnlock": "Biometric unlock",
+  "biometricSubtitle": "Use fingerprint or face to unlock",
+  "network": "Network",
+  "device": "Device",
+  "clearSession": "Clear Session",
+  "clearSessionSubtitle": "Log out and clear saved credentials",
+  "sessionCleared": "Session cleared",
+  "deactivateDevice": "Deactivate Device",
+  "deactivateSubtitle": "Remove this device from Llave",
+  "deactivateTitle": "Deactivate Device?",
+  "deactivateMessage": "This will remove your device registration with Llave. You will need to activate again.",
+  "deactivate": "Deactivate",
+  "about": "About",
+  "version": "Version",
+  "poweredBy": "Powered by",
+  "poweredByValue": "Rust core (llave-core) via flutter_rust_bridge",
+  "developer": "Developer",
+  "developerTools": "Developer Tools",
+  "mockBridgeActive": "Mock bridge active",
+  "realBridgeActive": "Real bridge active",
+  "themeSystem": "System default",
+  "themeLight": "Light",
+  "themeDark": "Dark",
+  "enterYourPin": "Enter your PIN",
+  "currentPinLabel": "Current PIN",
+  "biometricEnabled": "Biometric unlock enabled",
+  "wrongPin": "Wrong PIN",
+  "newPinLabel": "New PIN",
+  "confirmNewPinLabel": "Confirm New PIN",
+  "pinMinLength": "PIN must be at least 4 characters",
+  "pinsDoNotMatch": "New PINs do not match",
+  "pinChangedSuccess": "PIN changed successfully",
+  "pinChangeFailed": "Failed to change PIN: {error}",
+  "@pinChangeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "chooseTheme": "Choose theme",
+  "proxy": "Proxy",
+  "directConnection": "Direct connection",
+  "proxyDescription": "Route all AEAT requests through an HTTP, HTTPS, or SOCKS5 proxy. Useful when your IP has been rate-limited.",
+  "proxyUrlLabel": "Proxy URL",
+  "proxyUrlHint": "socks5://127.0.0.1:1080",
+  "proxySetTo": "Proxy set to {url}",
+  "@proxySetTo": {
+    "placeholders": {
+      "url": { "type": "String" }
+    }
+  },
+  "proxyCleared": "Proxy cleared",
+
+  "appName": "Llave",
+  "checkingSession": "Checking session...",
+
+  "biometricFailed": "Biometric unlock failed. Enter your PIN.",
+  "wrongPinTryAgain": "Wrong PIN. Try again.",
+  "forgotPinTitle": "Forgot PIN?",
+  "forgotPinMessage": "This will erase your saved session. You will need to activate your device again.",
+  "eraseAndReset": "Erase & Reset",
+  "enterPinToUnlock": "Enter your PIN to unlock",
+  "pinLabel": "PIN",
+  "unlock": "Unlock",
+  "unlockWithBiometrics": "Unlock with biometrics",
+  "forgotPin": "Forgot PIN?",
+
+  "activateLlave": "Activate Llave",
+  "registerDevice": "Register this device with your Cl@ve account.",
+  "activateWithDni": "Activate with DNI/NIE",
+  "dniActivateDescription": "You will need the data printed on your physical DNI/NIE card and access to the phone number registered with Cl@ve.",
+
+  "setYourPin": "Set Your PIN",
+  "setPinDescription": "This PIN will be required every time you open the app. It protects your Llave credentials on this device.",
+  "confirmPinLabel": "Confirm PIN",
+  "setPin": "Set PIN",
+  "pinTooShort": "PIN must be at least {length} characters",
+  "@pinTooShort": {
+    "placeholders": {
+      "length": { "type": "int" }
+    }
+  },
+  "enableBiometricTitle": "Enable biometric unlock?",
+  "enableBiometricMessage": "Use your fingerprint or face to unlock Llave instead of entering your PIN each time.",
+  "notNow": "Not now",
+
+  "ipBlockedTitle": "IP temporarily blocked by AEAT",
+  "ipBlockedMessage": "Your IP address has exceeded the maximum number of failed attempts allowed per day. Try again tomorrow, or configure a proxy to use a different IP address.",
+  "setProxy": "Set Proxy",
+
+  "biometricReason": "Unlock Llave with biometrics",
+
+  "pinsDoNotMatchSetPin": "PINs do not match",
+
+  "unknownProvider": "Unknown provider",
+  "unknownType": "Unknown",
+
+  "typeDniNie": "DNI/NIE",
+  "typeQr": "QR",
+  "typeSms": "SMS"
+}

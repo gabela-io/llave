@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../src/auth_provider.dart';
 import '../src/biometric_service.dart';
+import '../src/routes.dart';
 
 /// Screen shown after activation to let the user choose a PIN.
 class SetPinScreen extends ConsumerStatefulWidget {
@@ -30,15 +32,16 @@ class _SetPinScreenState extends ConsumerState<SetPinScreen> {
   }
 
   Future<void> _submit() async {
+    final l10n = AppLocalizations.of(context)!;
     final pin = _pinController.text;
     final confirm = _confirmController.text;
 
     if (pin.length < _minPinLength) {
-      setState(() => _error = 'PIN must be at least $_minPinLength characters');
+      setState(() => _error = l10n.pinTooShort(_minPinLength));
       return;
     }
     if (pin != confirm) {
-      setState(() => _error = 'PINs do not match');
+      setState(() => _error = l10n.pinsDoNotMatchSetPin);
       _confirmController.clear();
       return;
     }
@@ -59,7 +62,7 @@ class _SetPinScreenState extends ConsumerState<SetPinScreen> {
         await _offerBiometricEnrollment(pin);
       }
 
-      if (mounted) context.go('/');
+      if (mounted) context.go(AppRoutes.home);
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -68,24 +71,22 @@ class _SetPinScreenState extends ConsumerState<SetPinScreen> {
   }
 
   Future<void> _offerBiometricEnrollment(String pin) async {
+    final l10n = AppLocalizations.of(context)!;
     final enable = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.fingerprint, size: 48),
-        title: const Text('Enable biometric unlock?'),
-        content: const Text(
-          'Use your fingerprint or face to unlock Llave instead of '
-          'entering your PIN each time.',
-        ),
+        title: Text(l10n.enableBiometricTitle),
+        content: Text(l10n.enableBiometricMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Not now'),
+            child: Text(l10n.notNow),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Enable'),
+            child: Text(l10n.enable),
           ),
         ],
       ),
@@ -98,6 +99,7 @@ class _SetPinScreenState extends ConsumerState<SetPinScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -116,7 +118,7 @@ class _SetPinScreenState extends ConsumerState<SetPinScreen> {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  'Set Your PIN',
+                  l10n.setYourPin,
                   style: theme.textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: theme.colorScheme.primary,
@@ -124,8 +126,7 @@ class _SetPinScreenState extends ConsumerState<SetPinScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'This PIN will be required every time you open the app. '
-                  'It protects your Llave credentials on this device.',
+                  l10n.setPinDescription,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -139,7 +140,7 @@ class _SetPinScreenState extends ConsumerState<SetPinScreen> {
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.next,
                   decoration: InputDecoration(
-                    labelText: 'PIN',
+                    labelText: l10n.pinLabel,
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
                       icon: Icon(_obscure
@@ -157,7 +158,7 @@ class _SetPinScreenState extends ConsumerState<SetPinScreen> {
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _submit(),
                   decoration: InputDecoration(
-                    labelText: 'Confirm PIN',
+                    labelText: l10n.confirmPinLabel,
                     border: const OutlineInputBorder(),
                     errorText: _error,
                   ),
@@ -174,7 +175,7 @@ class _SetPinScreenState extends ConsumerState<SetPinScreen> {
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: Colors.white),
                           )
-                        : const Text('Set PIN'),
+                        : Text(l10n.setPin),
                   ),
                 ),
               ],

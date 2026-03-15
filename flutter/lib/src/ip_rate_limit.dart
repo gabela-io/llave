@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'package:go_router/go_router.dart';
+
+import 'routes.dart';
 
 /// Sentinel prefix emitted by Rust `LlaveError::IpRateLimited`.
 const _prefix = 'IP rate-limited by AEAT';
@@ -18,6 +21,7 @@ bool isIpRateLimited(String? error) {
 /// "Set Proxy" action that navigates to Settings.  Safe to call multiple
 /// times — clears previous banners first to avoid stacking.
 void showIpRateLimitBanner(BuildContext context) {
+  final l10n = AppLocalizations.of(context)!;
   final theme = Theme.of(context);
   final messenger = ScaffoldMessenger.of(context);
 
@@ -34,7 +38,7 @@ void showIpRateLimitBanner(BuildContext context) {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'IP temporarily blocked by AEAT',
+            l10n.ipBlockedTitle,
             style: theme.textTheme.titleSmall?.copyWith(
               color: theme.colorScheme.onErrorContainer,
               fontWeight: FontWeight.bold,
@@ -42,9 +46,7 @@ void showIpRateLimitBanner(BuildContext context) {
           ),
           const SizedBox(height: 4),
           Text(
-            'Your IP address has exceeded the maximum number of failed '
-            'attempts allowed per day. Try again tomorrow, or configure '
-            'a proxy to use a different IP address.',
+            l10n.ipBlockedMessage,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onErrorContainer,
             ),
@@ -55,17 +57,17 @@ void showIpRateLimitBanner(BuildContext context) {
         TextButton(
           onPressed: () {
             messenger.hideCurrentMaterialBanner();
-            context.go('/settings');
+            context.go(AppRoutes.settings);
           },
           child: Text(
-            'Set Proxy',
+            l10n.setProxy,
             style: TextStyle(color: theme.colorScheme.onErrorContainer),
           ),
         ),
         TextButton(
           onPressed: () => messenger.hideCurrentMaterialBanner(),
           child: Text(
-            'Dismiss',
+            l10n.dismiss,
             style: TextStyle(color: theme.colorScheme.onErrorContainer),
           ),
         ),
