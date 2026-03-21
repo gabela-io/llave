@@ -1239,6 +1239,7 @@ dependencies = [
  "chrono",
  "flutter_rust_bridge",
  "llave-core",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",
