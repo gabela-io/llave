@@ -6,7 +6,7 @@ pub mod error;
 pub mod session;
 pub mod storage;
 
-pub use api::LlaveClient;
+pub use api::{LlaveClient, shared_client, reset_shared_client};
 pub use config::{Config, set_proxy, get_proxy};
 pub use error::LlaveError;
 pub use session::Session;

@@ -1,5 +1,6 @@
 use crate::error::{LlaveError, Result};
 use std::sync::OnceLock;
+use zeroize::Zeroizing;
 
 /// Platform-agnostic secure credential storage.
 ///
@@ -102,38 +103,86 @@ impl SecureStorage for KeyringStorage {
 /// after mutations (activate, logout) the FFI layer returns session data for
 /// Flutter to persist.
 pub struct MemoryStorage {
-    data: std::sync::RwLock<Option<String>>,
+    data: parking_lot::RwLock<Option<Zeroizing<String>>>,
 }
 
 impl MemoryStorage {
     pub fn new() -> Self {
         Self {
-            data: std::sync::RwLock::new(None),
+            data: parking_lot::RwLock::new(None),
         }
     }
 }
 
 impl SecureStorage for MemoryStorage {
     fn save(&self, data: &str) -> Result<()> {
-        let mut guard = self.data.write().map_err(|e| {
-            LlaveError::Config(format!("storage lock poisoned: {e}"))
-        })?;
-        *guard = Some(data.to_owned());
+        *self.data.write() = Some(Zeroizing::new(data.to_owned()));
         Ok(())
     }
 
     fn load(&self) -> Result<String> {
-        let guard = self.data.read().map_err(|e| {
-            LlaveError::Config(format!("storage lock poisoned: {e}"))
-        })?;
-        guard.clone().ok_or(LlaveError::NoSession)
+        let guard = self.data.read();
+        guard.as_deref().cloned().ok_or(LlaveError::NoSession)
     }
 
     fn delete(&self) -> Result<()> {
-        let mut guard = self.data.write().map_err(|e| {
-            LlaveError::Config(format!("storage lock poisoned: {e}"))
-        })?;
-        *guard = None;
+        *self.data.write() = None;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_before_save_returns_no_session() {
+        let store = MemoryStorage::new();
+        let err = store.load().unwrap_err();
+        assert!(matches!(err, LlaveError::NoSession));
+    }
+
+    #[test]
+    fn save_then_load() {
+        let store = MemoryStorage::new();
+        store.save("session-data").unwrap();
+        assert_eq!(store.load().unwrap(), "session-data");
+    }
+
+    #[test]
+    fn save_overwrites() {
+        let store = MemoryStorage::new();
+        store.save("first").unwrap();
+        store.save("second").unwrap();
+        assert_eq!(store.load().unwrap(), "second");
+    }
+
+    #[test]
+    fn delete_then_load_fails() {
+        let store = MemoryStorage::new();
+        store.save("data").unwrap();
+        store.delete().unwrap();
+        let err = store.load().unwrap_err();
+        assert!(matches!(err, LlaveError::NoSession));
+    }
+
+    #[test]
+    fn delete_when_empty_succeeds() {
+        let store = MemoryStorage::new();
+        store.delete().unwrap();
+    }
+
+    #[test]
+    fn full_lifecycle() {
+        let store = MemoryStorage::new();
+        assert!(store.load().is_err());
+        store.save("v1").unwrap();
+        assert_eq!(store.load().unwrap(), "v1");
+        store.save("v2").unwrap();
+        assert_eq!(store.load().unwrap(), "v2");
+        store.delete().unwrap();
+        assert!(store.load().is_err());
+        store.save("v3").unwrap();
+        assert_eq!(store.load().unwrap(), "v3");
     }
 }

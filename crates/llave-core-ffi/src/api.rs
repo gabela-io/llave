@@ -116,7 +116,7 @@ pub async fn activate_device(
     let device_id = uuid::Uuid::new_v4().to_string();
     let device_password = password.unwrap_or_else(|| llave_core::crypto::generate_device_password());
 
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
     let session =
         llave_core::auth::activate_device(&client, &nif, &device_id, &device_password)
             .await
@@ -141,7 +141,7 @@ pub async fn activate_device(
 #[frb]
 pub async fn request_pin() -> Result<FfiPinResult, String> {
     let session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
     let (pin, ttl) = llave_core::auth::request_pin(&client, &session)
         .await
         .map_err(|e| e.to_string())?;
@@ -184,7 +184,7 @@ pub async fn check_nif(nif: Option<String>) -> Result<FfiNifCheckResult, String>
         cfg.nif.ok_or("No NIF configured")?
     };
 
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
     let device_id = uuid::Uuid::new_v4().to_string();
 
     let resp = client
@@ -206,7 +206,7 @@ pub async fn check_nif(nif: Option<String>) -> Result<FfiNifCheckResult, String>
 #[frb]
 pub async fn get_my_data() -> Result<FfiApiResult, String> {
     let session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     // Step 1: ClaveIsNifActivatedSv (the Android app calls this before CheckMyData).
     let _activated = client
@@ -253,7 +253,7 @@ pub async fn get_my_data() -> Result<FfiApiResult, String> {
 #[frb]
 pub async fn get_history() -> Result<FfiApiResult, String> {
     let session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     // Default date range: last 30 days in DD/MM/YYYY format.
     let now = chrono::Local::now();
@@ -287,7 +287,7 @@ pub async fn get_history() -> Result<FfiApiResult, String> {
 #[frb]
 pub async fn get_pending_requests() -> Result<FfiApiResult, String> {
     let session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match llave_core::auth::poll_pending_requests(&client, &session).await {
         Ok(data) => Ok(FfiApiResult {
@@ -307,7 +307,7 @@ pub async fn get_pending_requests() -> Result<FfiApiResult, String> {
 #[frb]
 pub async fn confirm_request(token: String, idp_code: String) -> Result<FfiApiResult, String> {
     let session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match llave_core::auth::confirm_authentication(&client, &session, &token, &idp_code).await {
         Ok(data) => Ok(FfiApiResult {
@@ -327,7 +327,7 @@ pub async fn confirm_request(token: String, idp_code: String) -> Result<FfiApiRe
 #[frb]
 pub async fn reject_request(token: String, idp_code: String) -> Result<FfiApiResult, String> {
     let session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match llave_core::auth::reject_authentication(&client, &session, &token, &idp_code).await {
         Ok(data) => Ok(FfiApiResult {
@@ -347,7 +347,7 @@ pub async fn reject_request(token: String, idp_code: String) -> Result<FfiApiRes
 #[frb]
 pub async fn qr_authenticate(value: String) -> Result<FfiApiResult, String> {
     let session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match client
         .qr_authenticate(&session.device_id, &session.nif, &value)
@@ -370,7 +370,7 @@ pub async fn qr_authenticate(value: String) -> Result<FfiApiResult, String> {
 #[frb]
 pub async fn deactivate() -> Result<FfiApiResult, String> {
     let session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match client
         .deactivate_authentication(&session.device_id, &session.nif)
@@ -465,7 +465,7 @@ pub async fn dni_authenticate(
     soporte: String,
 ) -> Result<FfiApiResult, String> {
     let nif = llave_core::config::validate_nif(&nif).map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match llave_core::auth::dni_request_sms(&client, &nif, &fecha, &soporte).await {
         Ok(phase1) => {
@@ -513,7 +513,7 @@ pub async fn dni_complete_activation(
     sms_pin: String,
 ) -> Result<FfiApiResult, String> {
     let nif = llave_core::config::validate_nif(&nif).map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
     let device_password = llave_core::crypto::generate_device_password();
 
     match llave_core::auth::dni_validate_and_activate(
@@ -559,7 +559,7 @@ pub async fn dni_complete_activation(
 #[frb]
 pub async fn set_firebase_token(token_push: String) -> Result<FfiApiResult, String> {
     let session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match client
         .set_firebase_token(&session.device_id, &session.nif, &token_push)
@@ -582,7 +582,7 @@ pub async fn set_firebase_token(token_push: String) -> Result<FfiApiResult, Stri
 #[frb]
 pub async fn request_sms_code() -> Result<FfiApiResult, String> {
     let _session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match client.request_sms_code().await {
         Ok(resp) => Ok(FfiApiResult {
@@ -606,7 +606,7 @@ pub async fn validate_sms_code(
     pin: String,
 ) -> Result<FfiApiResult, String> {
     let _session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match client.validate_sms_code(&timestamp, &token, &pin).await {
         Ok(resp) => Ok(FfiApiResult {
@@ -626,7 +626,7 @@ pub async fn validate_sms_code(
 #[frb]
 pub async fn get_llave_movil() -> Result<FfiApiResult, String> {
     let _session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match client.get_llave_movil().await {
         Ok(resp) => Ok(FfiApiResult {
@@ -646,7 +646,7 @@ pub async fn get_llave_movil() -> Result<FfiApiResult, String> {
 #[frb]
 pub async fn validate_llave_movil(token: String) -> Result<FfiApiResult, String> {
     let _session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match client.validate_llave_movil(&token).await {
         Ok(resp) => Ok(FfiApiResult {
@@ -666,7 +666,7 @@ pub async fn validate_llave_movil(token: String) -> Result<FfiApiResult, String>
 #[frb]
 pub async fn get_pending_petitions() -> Result<FfiApiResult, String> {
     let session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match client
         .get_pending_petitions(&session.device_id, &session.nif)
@@ -692,7 +692,7 @@ pub async fn listen_for_requests(
     max_attempts: u32,
 ) -> Result<FfiApiResult, String> {
     let session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    let client = llave_core::LlaveClient::new().map_err(|e| e.to_string())?;
+    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
     match llave_core::auth::listen_for_requests(&client, &session, interval_secs, max_attempts)
         .await

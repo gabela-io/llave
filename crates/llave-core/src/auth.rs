@@ -2,7 +2,8 @@ use crate::api::LlaveClient;
 use crate::error::Result;
 use crate::session::Session;
 use serde::Serialize;
-use std::sync::Mutex;
+use parking_lot::Mutex;
+use zeroize::Zeroizing;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
@@ -14,6 +15,12 @@ const EPOCH_TIMESTAMP: &str = "19700101T000000000Z";
 /// `timestamp` inside the `peticion` object — we store it here so the next
 /// poll only returns newer requests.
 static LAST_POLL_TS: Mutex<Option<String>> = Mutex::new(None);
+
+/// Reset polling state. Call on logout/session change so stale timestamps
+/// from a previous session are not reused.
+pub fn reset_poll_state() {
+    *LAST_POLL_TS.lock() = None;
+}
 
 /// Events emitted by the authentication listener.
 #[derive(Debug, Clone, Serialize)]
@@ -57,11 +64,11 @@ pub async fn activate_device(
     tracing::debug!(nif_status = %activated.status, "nif check");
 
     let activate_resp = client.activate_authentication(device_password, "").await?;
-    let activate_data = activate_resp.respuesta.unwrap_or(crate::api::ActivateResponse {
-        device_id: Some(device_id.to_string()),
-        user_password: None,
-        token: None,
-    });
+    let activate_data = activate_resp.respuesta.ok_or_else(|| crate::error::LlaveError::Api {
+        status: "OK".into(),
+        code: String::new(),
+        message: "Empty activation response".into(),
+    })?;
 
     // The client-generated UUID IS the device password. The server may echo
     // it back as `user_password`, or may not return it at all. The `token`
@@ -77,7 +84,7 @@ pub async fn activate_device(
     let session = Session {
         device_id: activate_data.device_id.unwrap_or_else(|| device_id.to_string()),
         nif: nif.to_string(),
-        device_password: saved_password,
+        device_password: Zeroizing::new(saved_password),
         firebase_token: None,
         created_at: chrono::Utc::now().to_rfc3339(),
     };
@@ -99,9 +106,6 @@ pub async fn activate_device(
 pub async fn request_pin(client: &LlaveClient, session: &Session) -> Result<(String, String)> {
     tracing::info!(
         device_id = %session.device_id,
-        nif = %session.nif,
-        password_len = session.device_password.len(),
-        password_prefix = %&session.device_password[..session.device_password.len().min(4)],
         "requesting pin"
     );
 
@@ -125,8 +129,7 @@ pub async fn request_pin(client: &LlaveClient, session: &Session) -> Result<(Str
     // device is not properly registered on the server.
     let poll_timestamp = LAST_POLL_TS
         .lock()
-        .ok()
-        .and_then(|g| g.clone())
+        .clone()
         .unwrap_or_else(|| EPOCH_TIMESTAMP.to_string());
 
     match client
@@ -170,9 +173,7 @@ pub async fn request_pin(client: &LlaveClient, session: &Session) -> Result<(Str
                     .and_then(|p| p.get("timestamp"))
                     .and_then(|t| t.as_str())
                 {
-                    if let Ok(mut guard) = LAST_POLL_TS.lock() {
-                        *guard = Some(ts.to_string());
-                    }
+                    *LAST_POLL_TS.lock() = Some(ts.to_string());
                 }
             }
         }
@@ -386,7 +387,7 @@ pub async fn dni_validate_and_activate(
     let session = Session {
         device_id,
         nif: nif.to_string(),
-        device_password: saved_password,
+        device_password: Zeroizing::new(saved_password),
         firebase_token: None,
         created_at: chrono::Utc::now().to_rfc3339(),
     };
@@ -394,79 +395,6 @@ pub async fn dni_validate_and_activate(
     tracing::info!("device activated via DNI/NIE + SMS flow");
 
     Ok(session)
-}
-
-/// DNI/NIE authentication + device activation (legacy single-call flow).
-///
-/// **Deprecated**: Use [`dni_request_sms`] + [`dni_validate_and_activate`]
-/// instead. This function skips the required SMS verification step and will
-/// fail with an HTML response from www6.
-pub async fn dni_activate_device(
-    client: &LlaveClient,
-    nif: &str,
-    fecha: &str,
-    soporte: &str,
-    device_password: &str,
-) -> Result<(crate::api::ClaveRequestStateResponse, Session)> {
-    // Step 1: DNI/NIE auth (establishes session cookies).
-    tracing::info!("authenticating via DNI/NIE");
-    client.authenticate_dni_nie(nif, fecha, soporte).await?;
-    tracing::info!("DNI/NIE auth complete (session cookies captured)");
-
-    // Step 2: Check registration state (uses session cookies from step 1).
-    tracing::info!("checking registration state");
-    let state_resp = client.clave_request_state().await?;
-    if state_resp.status != "OK" {
-        return Err(crate::error::LlaveError::Api {
-            status: state_resp.status,
-            code: state_resp.codigo_error.unwrap_or_default(),
-            message: state_resp.mensaje.unwrap_or_else(|| "Registration state check failed".into()),
-        });
-    }
-    let state = state_resp.respuesta.ok_or_else(|| crate::error::LlaveError::Api {
-        status: "OK".into(),
-        code: String::new(),
-        message: "Empty ClaveRequestState response".into(),
-    })?;
-    tracing::info!(
-        registrado = state.registrado.as_deref().unwrap_or("?"),
-        telefono = state.telefono.as_deref().unwrap_or("?"),
-        nivel = state.nivel_registro.as_deref().unwrap_or("?"),
-        "registration state"
-    );
-
-    // Step 3: Activate device (uses session cookies from steps 1+2).
-    // NOTE: This will fail if pin24H cookie is not set (SMS verification skipped).
-    tracing::info!("activating device");
-    let activate_resp = client.activate_authentication(device_password, "").await?;
-    if activate_resp.status != "OK" {
-        return Err(crate::error::LlaveError::Api {
-            status: activate_resp.status,
-            code: activate_resp.codigo_error.unwrap_or_default(),
-            message: activate_resp.mensaje.unwrap_or_else(|| "Device activation failed".into()),
-        });
-    }
-
-    let activate_data = activate_resp.respuesta.ok_or_else(|| crate::error::LlaveError::Api {
-        status: "OK".into(),
-        code: String::new(),
-        message: "Empty activation response".into(),
-    })?;
-
-    let device_id = activate_data.device_id.unwrap_or_default();
-    let saved_password = activate_data.user_password
-        .unwrap_or_else(|| device_password.to_string());
-    let session = Session {
-        device_id,
-        nif: nif.to_string(),
-        device_password: saved_password,
-        firebase_token: None,
-        created_at: chrono::Utc::now().to_rfc3339(),
-    };
-    session.save()?;
-    tracing::info!("device activated via DNI/NIE flow");
-
-    Ok((state, session))
 }
 
 /// Poll for pending authentication requests (single poll).
@@ -483,8 +411,7 @@ pub async fn poll_pending_requests(
     // Use saved timestamp from previous successful poll, or epoch for first call.
     let timestamp = LAST_POLL_TS
         .lock()
-        .ok()
-        .and_then(|g| g.clone())
+        .clone()
         .unwrap_or_else(|| EPOCH_TIMESTAMP.to_string());
 
     tracing::debug!(timestamp = %timestamp, "polling pending requests");
@@ -514,9 +441,7 @@ pub async fn poll_pending_requests(
             .and_then(|p| p.get("timestamp"))
             .and_then(|t| t.as_str())
         {
-            if let Ok(mut guard) = LAST_POLL_TS.lock() {
-                *guard = Some(ts.to_string());
-            }
+            *LAST_POLL_TS.lock() = Some(ts.to_string());
         }
     }
 
@@ -667,6 +592,67 @@ pub async fn listen_for_requests(
 /// Error codes that indicate "no pending operations" rather than a real failure.
 fn is_no_pending_code(code: &str) -> bool {
     code == "205"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auth_event_listener_started_serde() {
+        let event = AuthEvent::ListenerStarted;
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "ListenerStarted");
+        assert!(json.get("data").is_none());
+    }
+
+    #[test]
+    fn auth_event_listener_stopped_serde() {
+        let event = AuthEvent::ListenerStopped;
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "ListenerStopped");
+        assert!(json.get("data").is_none());
+    }
+
+    #[test]
+    fn auth_event_no_pending_serde() {
+        let event = AuthEvent::NoPending;
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "NoPending");
+        assert!(json.get("data").is_none());
+    }
+
+    #[test]
+    fn auth_event_pending_data_serde() {
+        let event = AuthEvent::PendingData {
+            source: "all_operations".into(),
+            data: serde_json::json!({"key": "value"}),
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "PendingData");
+        assert_eq!(json["data"]["source"], "all_operations");
+        assert_eq!(json["data"]["data"]["key"], "value");
+    }
+
+    #[test]
+    fn auth_event_poll_error_serde() {
+        let event = AuthEvent::PollError {
+            message: "connection timed out".into(),
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "PollError");
+        assert_eq!(json["data"]["message"], "connection timed out");
+    }
+
+    #[test]
+    fn auth_event_timeout_serde() {
+        let event = AuthEvent::Timeout {
+            message: "max attempts reached".into(),
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "Timeout");
+        assert_eq!(json["data"]["message"], "max attempts reached");
+    }
 }
 
 /// Run an event-driven listener that sends events to a broadcast channel.

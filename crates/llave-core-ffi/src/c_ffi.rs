@@ -31,7 +31,9 @@ unsafe fn to_str(ptr: *const c_char) -> String {
 }
 
 fn c(s: String) -> *mut c_char {
-    CString::new(s).unwrap_or_default().into_raw()
+    CString::new(s.replace('\0', "?"))
+        .expect("replacement removed all NUL bytes")
+        .into_raw()
 }
 
 fn ok_json(data: serde_json::Value) -> *mut c_char {

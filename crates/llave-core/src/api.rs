@@ -1,7 +1,48 @@
 use crate::error::{LlaveError, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use parking_lot::Mutex;
+use std::sync::Arc;
+
+// ---------------------------------------------------------------------------
+// Shared client for the FFI layer — persists cookies across calls.
+// ---------------------------------------------------------------------------
+
+static SHARED_CLIENT: Mutex<Option<Arc<LlaveClient>>> = Mutex::new(None);
+
+/// Get or create the shared [`LlaveClient`].
+///
+/// The client is lazily initialised on first use and reused for all
+/// subsequent calls so that cookies accumulate across FFI invocations.
+/// Call [`reset_shared_client`] when the proxy changes or on logout.
+pub fn shared_client() -> Result<Arc<LlaveClient>> {
+    let mut guard = SHARED_CLIENT.lock();
+    if let Some(ref client) = *guard {
+        return Ok(Arc::clone(client));
+    }
+    let client = Arc::new(LlaveClient::new()?);
+    *guard = Some(Arc::clone(&client));
+    Ok(client)
+}
+
+/// Drop the shared client so the next [`shared_client`] call creates a
+/// fresh one.  Called on proxy change and logout.
+pub fn reset_shared_client() {
+    *SHARED_CLIENT.lock() = None;
+}
+
+/// Truncate a string to at most `max_bytes`, ensuring the cut falls on a
+/// UTF-8 character boundary so indexing never panics.
+pub(crate) fn truncate_str(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
 
 const BASE_URL: &str = "https://www2.agenciatributaria.gob.es";
 const BASE_URL_WWW6: &str = "https://www6.agenciatributaria.gob.es";
@@ -197,20 +238,20 @@ impl LlaveClient {
 
     /// Check whether a cookie with the given name exists in the jar.
     pub fn has_cookie(&self, name: &str) -> bool {
-        let cookies = self.cookies.lock().unwrap();
+        let cookies = self.cookies.lock();
         cookies.iter().any(|(k, _)| k == name)
     }
 
     /// Export cookies as JSON for persistence across FFI calls.
     pub fn export_cookies(&self) -> String {
-        let cookies = self.cookies.lock().unwrap();
+        let cookies = self.cookies.lock();
         serde_json::to_string(&*cookies).unwrap_or_else(|_| "[]".into())
     }
 
     /// Import cookies from a previously exported JSON string.
     pub fn import_cookies(&self, json: &str) {
         if let Ok(imported) = serde_json::from_str::<Vec<(String, String)>>(json) {
-            let mut cookies = self.cookies.lock().unwrap();
+            let mut cookies = self.cookies.lock();
             for (name, value) in imported {
                 if let Some(existing) = cookies.iter_mut().find(|(k, _)| k == &name) {
                     existing.1 = value;
@@ -228,7 +269,7 @@ impl LlaveClient {
 
     /// Build cookie header, excluding cookies whose names are in `exclude`.
     fn cookie_header_filtered(&self, exclude: &[&str]) -> String {
-        let cookies = self.cookies.lock().unwrap();
+        let cookies = self.cookies.lock();
         cookies
             .iter()
             .filter(|(k, _)| !exclude.contains(&k.as_str()))
@@ -262,7 +303,7 @@ impl LlaveClient {
             );
         }
 
-        let mut cookies = self.cookies.lock().unwrap();
+        let mut cookies = self.cookies.lock();
         for cookie in resp.cookies() {
             let name = cookie.name().to_string();
             let value = cookie.value().to_string();
@@ -280,7 +321,7 @@ impl LlaveClient {
     /// The Android app sends a JSON object containing cookie diagnostic info.
     /// We replicate this so the server recognises us as a legitimate client.
     fn trazas_app_header(&self) -> String {
-        let cookies = self.cookies.lock().unwrap();
+        let cookies = self.cookies.lock();
         let get = |name: &str| -> String {
             cookies
                 .iter()
@@ -318,6 +359,67 @@ impl LlaveClient {
         .unwrap_or_else(|_| "{}".into())
     }
 
+    /// Maximum number of redirects to follow before returning an error.
+    const MAX_REDIRECTS: u32 = 10;
+
+    /// Follow HTTP redirects, re-attaching cookies and TrazasApp at each hop.
+    ///
+    /// Returns the final (non-redirect) response and the number of redirects
+    /// followed. Caps at [`Self::MAX_REDIRECTS`] to prevent infinite loops.
+    async fn follow_redirects(
+        &self,
+        endpoint: &str,
+        mut resp: reqwest::Response,
+    ) -> Result<(reqwest::Response, u32)> {
+        let mut count = 0u32;
+        while resp.status().is_redirection() {
+            let location = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_string();
+            if location.is_empty() {
+                break;
+            }
+
+            let next_url = if location.starts_with("http") {
+                location.clone()
+            } else {
+                let base = resp.url().origin().unicode_serialization();
+                format!("{base}{location}")
+            };
+
+            tracing::debug!(endpoint = endpoint, redirect_to = %next_url, "following redirect");
+
+            let cookie_header = self.cookie_header();
+            let mut next = self
+                .client
+                .get(&next_url)
+                .header("TrazasApp", self.trazas_app_header());
+            if !cookie_header.is_empty() {
+                next = next.header(reqwest::header::COOKIE, &cookie_header);
+            }
+            resp = next.send().await?;
+            count += 1;
+            tracing::debug!(
+                endpoint = endpoint,
+                http_status = %resp.status(),
+                redirect_count = count,
+                "redirect response"
+            );
+            self.capture_cookies(&resp);
+
+            if count >= Self::MAX_REDIRECTS {
+                return Err(LlaveError::TooManyRedirects {
+                    endpoint: endpoint.to_string(),
+                    count,
+                });
+            }
+        }
+        Ok((resp, count))
+    }
+
     async fn post_form<T: serde::de::DeserializeOwned>(
         &self,
         endpoint: &str,
@@ -335,48 +437,17 @@ impl LlaveClient {
             req = req.header(reqwest::header::COOKIE, &cookie_header);
         }
 
-        let mut resp = req.send().await?;
+        let resp = req.send().await?;
         tracing::debug!(endpoint = endpoint, http_status = %resp.status(), "aeat response");
         self.capture_cookies(&resp);
 
-        // Follow redirects manually, re-attaching cookies at each hop.
-        // reqwest strips custom headers (Cookie) on cross-origin redirects
-        // (e.g. www6 → www2), so we must handle this ourselves.
-        while resp.status().is_redirection() {
-            let location = resp
-                .headers()
-                .get(reqwest::header::LOCATION)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or_default()
-                .to_string();
-            if location.is_empty() {
-                break;
-            }
-
-            let next_url = if location.starts_with("http") {
-                location.clone()
-            } else {
-                let base = resp.url().origin().unicode_serialization();
-                format!("{base}{location}")
-            };
-
-            tracing::debug!(endpoint = endpoint, redirect_to = %next_url, "following redirect");
-
-            let cookie_header = self.cookie_header();
-            let mut next = self.client.get(&next_url).header("TrazasApp", self.trazas_app_header());
-            if !cookie_header.is_empty() {
-                next = next.header(reqwest::header::COOKIE, &cookie_header);
-            }
-            resp = next.send().await?;
-            tracing::debug!(endpoint = endpoint, http_status = %resp.status(), "redirect response");
-            self.capture_cookies(&resp);
-        }
+        let (resp, _) = self.follow_redirects(endpoint, resp).await?;
 
         let final_status = resp.status();
         let final_url = resp.url().to_string();
         let body = resp.text().await?;
         // Log at info level so response bodies are visible in normal output.
-        tracing::info!(endpoint = endpoint, http_status = %final_status, final_url = %final_url, body_len = body.len(), body_preview = %&body[..body.len().min(512)], "aeat response body");
+        tracing::info!(endpoint = endpoint, http_status = %final_status, final_url = %final_url, body_len = body.len(), body_preview = %truncate_str(&body, 512), "aeat response body");
 
         // Detect HTML responses early — the server returns the login page
         // when session cookies are missing or expired.
@@ -384,7 +455,7 @@ impl LlaveClient {
         if trimmed.starts_with("<!DOCTYPE") || trimmed.starts_with("<html") {
             tracing::error!(
                 endpoint = endpoint,
-                body_preview = %&body[..body.len().min(512)],
+                body_preview = %truncate_str(&body, 512),
                 "server returned HTML instead of JSON — session likely invalid"
             );
             return Err(LlaveError::HtmlResponse {
@@ -396,7 +467,7 @@ impl LlaveClient {
             tracing::error!(
                 endpoint = endpoint,
                 err = %e,
-                body_preview = %&body[..body.len().min(1024)],
+                body_preview = %truncate_str(&body, 1024),
                 "failed to decode response as JSON"
             );
             LlaveError::Json(e)
@@ -407,7 +478,6 @@ impl LlaveClient {
     ///
     /// Some AEAT endpoints (like ObtenerClaveMovilSMS) expect a bare POST
     /// with no Content-Type or body. Sending form-encoded data causes 902024.
-    #[allow(dead_code)]
     async fn post_empty<T: serde::de::DeserializeOwned>(
         &self,
         endpoint: &str,
@@ -425,40 +495,16 @@ impl LlaveClient {
             req = req.header(reqwest::header::COOKIE, &cookie_header);
         }
 
-        let mut resp = req.send().await?;
+        let resp = req.send().await?;
         tracing::debug!(endpoint = endpoint, http_status = %resp.status(), "aeat response");
         self.capture_cookies(&resp);
 
-        while resp.status().is_redirection() {
-            let location = resp
-                .headers()
-                .get(reqwest::header::LOCATION)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or_default()
-                .to_string();
-            if location.is_empty() {
-                break;
-            }
-            let next_url = if location.starts_with("http") {
-                location.clone()
-            } else {
-                let base = resp.url().origin().unicode_serialization();
-                format!("{base}{location}")
-            };
-            tracing::debug!(endpoint = endpoint, redirect_to = %next_url, "following redirect");
-            let cookie_header = self.cookie_header();
-            let mut next = self.client.get(&next_url).header("TrazasApp", self.trazas_app_header());
-            if !cookie_header.is_empty() {
-                next = next.header(reqwest::header::COOKIE, &cookie_header);
-            }
-            resp = next.send().await?;
-            self.capture_cookies(&resp);
-        }
+        let (resp, _) = self.follow_redirects(endpoint, resp).await?;
 
         let final_status = resp.status();
         let final_url = resp.url().to_string();
         let body = resp.text().await?;
-        tracing::info!(endpoint = endpoint, http_status = %final_status, final_url = %final_url, body_len = body.len(), body_preview = %&body[..body.len().min(512)], "aeat response body (empty POST)");
+        tracing::info!(endpoint = endpoint, http_status = %final_status, final_url = %final_url, body_len = body.len(), body_preview = %truncate_str(&body, 512), "aeat response body (empty POST)");
 
         let trimmed = body.trim_start();
         if trimmed.starts_with("<!DOCTYPE") || trimmed.starts_with("<html") {
@@ -468,7 +514,7 @@ impl LlaveClient {
         }
 
         serde_json::from_str::<ApiResponse<T>>(&body).map_err(|e| {
-            tracing::error!(endpoint = endpoint, err = %e, body_preview = %&body[..body.len().min(1024)], "failed to decode response");
+            tracing::error!(endpoint = endpoint, err = %e, body_preview = %truncate_str(&body, 1024), "failed to decode response");
             LlaveError::Json(e)
         })
     }
@@ -628,36 +674,11 @@ impl LlaveClient {
             req = req.header(reqwest::header::COOKIE, &cookie_header);
         }
 
-        let mut resp = req.send().await?;
+        let resp = req.send().await?;
         tracing::info!(http_status = %resp.status(), "www6 activation response");
         self.capture_cookies(&resp);
 
-        // Follow redirects, re-attaching cookies at each hop.
-        while resp.status().is_redirection() {
-            let location = resp
-                .headers()
-                .get(reqwest::header::LOCATION)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or_default()
-                .to_string();
-            if location.is_empty() {
-                break;
-            }
-            let next_url = if location.starts_with("http") {
-                location.clone()
-            } else {
-                let base = resp.url().origin().unicode_serialization();
-                format!("{base}{location}")
-            };
-            tracing::info!(redirect_to = %next_url, "activation redirect");
-            let cookie_header = self.cookie_header();
-            let mut next = self.client.get(&next_url).header("TrazasApp", self.trazas_app_header());
-            if !cookie_header.is_empty() {
-                next = next.header(reqwest::header::COOKIE, &cookie_header);
-            }
-            resp = next.send().await?;
-            self.capture_cookies(&resp);
-        }
+        let (resp, _) = self.follow_redirects("activate_authentication", resp).await?;
 
         let final_status = resp.status();
         let final_url = resp.url().to_string();
@@ -666,7 +687,7 @@ impl LlaveClient {
             http_status = %final_status,
             final_url = %final_url,
             body_len = body.len(),
-            body_preview = %&body[..body.len().min(300)],
+            body_preview = %truncate_str(&body, 300),
             "www6 activation response body"
         );
 
@@ -678,7 +699,7 @@ impl LlaveClient {
         }
 
         serde_json::from_str::<ApiResponse<ActivateResponse>>(&body).map_err(|e| {
-            tracing::error!(err = %e, body_preview = %&body[..body.len().min(1024)], "failed to decode activation response");
+            tracing::error!(err = %e, body_preview = %truncate_str(&body, 1024), "failed to decode activation response");
             LlaveError::Json(e)
         })
     }
@@ -742,8 +763,7 @@ impl LlaveClient {
             req = req.header(reqwest::header::COOKIE, &cookie_header);
         }
 
-        // Follow redirects manually, capturing cookies at each hop.
-        let mut resp = req.send().await?;
+        let resp = req.send().await?;
         tracing::debug!(
             endpoint = "authenticate_dni_nie",
             http_status = %resp.status(),
@@ -751,48 +771,7 @@ impl LlaveClient {
         );
         self.capture_cookies(&resp);
 
-        let mut redirect_count = 0u32;
-        while resp.status().is_redirection() {
-            let location = resp
-                .headers()
-                .get(reqwest::header::LOCATION)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or_default()
-                .to_string();
-            if location.is_empty() {
-                break;
-            }
-
-            // Resolve relative redirects against the current URL.
-            let next_url = if location.starts_with("http") {
-                location.clone()
-            } else {
-                // Extract origin from the previous URL.
-                let base = resp.url().origin().unicode_serialization();
-                format!("{base}{location}")
-            };
-
-            tracing::debug!(
-                endpoint = "authenticate_dni_nie",
-                redirect_to = %next_url,
-                "following redirect"
-            );
-
-            let cookie_header = self.cookie_header();
-            let mut next = self.client.get(&next_url).header("TrazasApp", self.trazas_app_header());
-            if !cookie_header.is_empty() {
-                next = next.header(reqwest::header::COOKIE, &cookie_header);
-            }
-            resp = next.send().await?;
-            redirect_count += 1;
-            tracing::debug!(
-                endpoint = "authenticate_dni_nie",
-                http_status = %resp.status(),
-                redirect_count = redirect_count,
-                "redirect response"
-            );
-            self.capture_cookies(&resp);
-        }
+        let (resp, redirect_count) = self.follow_redirects("authenticate_dni_nie", resp).await?;
 
         // A successful DNI/NIE auth produces at least one redirect.
         // If we got 0 redirects, the server returned the login form again,
@@ -1006,5 +985,155 @@ impl LlaveClient {
             ("version_app", APP_VERSION),
             ("valor_qr", qr_value),
         ]).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- truncate_str --
+
+    #[test]
+    fn truncate_short_string_unchanged() {
+        assert_eq!(truncate_str("hello", 10), "hello");
+    }
+
+    #[test]
+    fn truncate_exact_length() {
+        assert_eq!(truncate_str("hello", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_cuts() {
+        assert_eq!(truncate_str("hello world", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_empty() {
+        assert_eq!(truncate_str("", 5), "");
+    }
+
+    #[test]
+    fn truncate_zero_max() {
+        assert_eq!(truncate_str("hello", 0), "");
+    }
+
+    #[test]
+    fn truncate_multibyte_boundary() {
+        // 'é' is 2 bytes in UTF-8: c(1) a(1) f(1) é(2) = 5 bytes
+        // max_bytes=4 falls inside 'é', should back up to 3
+        assert_eq!(truncate_str("café", 4), "caf");
+    }
+
+    #[test]
+    fn truncate_emoji_boundary() {
+        // '🦀' is 4 bytes: a(1) 🦀(4) b(1) = 6 bytes
+        // max_bytes=3 falls inside the emoji, should back up to 1
+        assert_eq!(truncate_str("a🦀b", 3), "a");
+    }
+
+    // -- ApiResponse::into_result --
+
+    #[test]
+    fn api_response_ok_with_data() {
+        let resp = ApiResponse {
+            status: "OK".into(),
+            visible: None,
+            crashlytics: None,
+            codigo_error: None,
+            mensaje: None,
+            respuesta: Some("data".to_string()),
+        };
+        assert_eq!(resp.into_result().unwrap(), "data");
+    }
+
+    #[test]
+    fn api_response_ok_without_data() {
+        let resp: ApiResponse<String> = ApiResponse {
+            status: "OK".into(),
+            visible: None,
+            crashlytics: None,
+            codigo_error: None,
+            mensaje: None,
+            respuesta: None,
+        };
+        let err = resp.into_result().unwrap_err();
+        assert!(err.to_string().contains("Empty response payload"));
+    }
+
+    #[test]
+    fn api_response_ko_generic() {
+        let resp: ApiResponse<String> = ApiResponse {
+            status: "KO".into(),
+            visible: None,
+            crashlytics: None,
+            codigo_error: Some("999".into()),
+            mensaje: Some("something failed".into()),
+            respuesta: None,
+        };
+        let err = resp.into_result().unwrap_err();
+        match err {
+            LlaveError::Api { status, code, message } => {
+                assert_eq!(status, "KO");
+                assert_eq!(code, "999");
+                assert_eq!(message, "something failed");
+            }
+            other => panic!("expected Api error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn api_response_ko_rate_limited() {
+        let resp: ApiResponse<String> = ApiResponse {
+            status: "KO".into(),
+            visible: None,
+            crashlytics: None,
+            codigo_error: Some("16600".into()),
+            mensaje: Some("rate limited".into()),
+            respuesta: None,
+        };
+        let err = resp.into_result().unwrap_err();
+        assert!(matches!(err, LlaveError::IpRateLimited { .. }));
+    }
+
+    #[test]
+    fn api_response_ko_defaults() {
+        let resp: ApiResponse<String> = ApiResponse {
+            status: "KO".into(),
+            visible: None,
+            crashlytics: None,
+            codigo_error: None,
+            mensaje: None,
+            respuesta: None,
+        };
+        let err = resp.into_result().unwrap_err();
+        match err {
+            LlaveError::Api { code, message, .. } => {
+                assert_eq!(code, "");
+                assert_eq!(message, "Unknown error");
+            }
+            other => panic!("expected Api error, got: {other:?}"),
+        }
+    }
+
+    // -- ApiResponse serde deserialization --
+
+    #[test]
+    fn api_response_deserialize_ok() {
+        let json = r#"{"status":"OK","respuesta":{"key":"value"}}"#;
+        let resp: ApiResponse<serde_json::Value> = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.status, "OK");
+        assert_eq!(resp.respuesta.unwrap()["key"], "value");
+    }
+
+    #[test]
+    fn api_response_deserialize_ko() {
+        let json = r#"{"status":"KO","codigo_error":"123","mensaje":"bad request"}"#;
+        let resp: ApiResponse<serde_json::Value> = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.status, "KO");
+        assert_eq!(resp.codigo_error.as_deref(), Some("123"));
+        assert_eq!(resp.mensaje.as_deref(), Some("bad request"));
+        assert!(resp.respuesta.is_none());
     }
 }

@@ -41,6 +41,9 @@ pub enum LlaveError {
 
     #[error("IP rate-limited by AEAT: {message}")]
     IpRateLimited { message: String },
+
+    #[error("Too many redirects ({count}) at {endpoint}")]
+    TooManyRedirects { endpoint: String, count: u32 },
 }
 
 pub type Result<T> = std::result::Result<T, LlaveError>;
