@@ -11,6 +11,9 @@ flutter/.packages
 flutter/pubspec.lock
 flutter/log
 
+# mdbook
+/book/book/
+
 # Nix
 /result
 /result-*
