@@ -30,7 +30,7 @@ flutter/              # Flutter app (iOS, Android, desktop)
 ### With Nix (recommended)
 
 ```bash
-nix run github:aldoborrero/research#llave-cli
+nix run github:openhacienda/llave#llave-cli
 ```
 
 ### Development shell
@@ -160,15 +160,23 @@ Configuration and session data are stored following XDG conventions:
 - **Config**: `$XDG_CONFIG_HOME/llave-cli/config.json`
 - **Session**: Stored in system keyring, or `$XDG_DATA_HOME/llave-cli/session.json` as fallback
 
-## Architecture
+## Documentation
 
-Based on reverse engineering of the official `es.aeat.pin24h` Android app (v6.2.5). See [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) for the full technical analysis.
+Technical documentation is available as an [mdbook](https://rust-lang.github.io/mdBook/) under `book/`. Based on reverse engineering of the official `es.aeat.pin24h` Android app (v6.2.5).
 
-### API Base URLs
+To build and serve locally:
 
-- `https://www2.agenciatributaria.gob.es/` — Primary API
-- `https://www12.agenciatributaria.gob.es/` — Llave Móvil, SMS validation
-- `https://pasarela.clave.gob.es/` — SAML identity gateway
+```bash
+nix run nixpkgs#mdbook -- serve book/
+```
+
+Topics covered:
+
+- [Architecture](book/src/architecture/system-overview.md) — system overview, AEAT infrastructure, Android app structure
+- [API Reference](book/src/api-reference/endpoints.md) — endpoints, request/response formats, error codes, constants
+- [Authentication Flows](book/src/authentication-flows/pin-request.md) — PIN request, Clave Movil, QR, DNI/NIE + SMS activation, SAML/DNIe
+- [Implementation Guide](book/src/implementation-guide/cookie-management.md) — cookie management, client identity, redirect handling, session persistence
+- [Cryptography](book/src/cryptography/browser-encryption.md) — browser encryption, device password generation, credential storage
 
 ## License
 
