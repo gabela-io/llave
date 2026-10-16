@@ -30,6 +30,10 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
   bool _answering = false;
   Map<String, dynamic>? _request;
 
+  /// Last value sent to the server. The camera keeps seeing the code on
+  /// the website, so the same value is not submitted twice.
+  String? _lastValue;
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +48,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
 
   Future<void> _authenticate(String value) async {
     if (value.trim().isEmpty) return;
+    _lastValue = value.trim();
 
     setState(() {
       _loading = true;
@@ -61,6 +66,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
       },
       context: context,
       onData: (decoded) {
+        if (!mounted) return;
         final peticion = decoded is Map<String, dynamic> ? decoded['peticion'] : null;
         if (peticion is! Map<String, dynamic>) {
           setState(() => _error = AppLocalizations.of(context)!.invalidPetitionData);
@@ -93,6 +99,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
       },
       context: context,
       onData: (_) {
+        if (!mounted) return;
         if (!confirm) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(AppLocalizations.of(context)!.requestRejected)),
@@ -110,9 +117,9 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
 
   void _onQrDetected(BarcodeCapture capture) {
     if (_loading || _success || _request != null) return;
-    final barcode = capture.barcodes.firstOrNull;
-    if (barcode?.rawValue == null) return;
-    _authenticate(barcode!.rawValue!);
+    final value = capture.barcodes.firstOrNull?.rawValue?.trim();
+    if (value == null || value == _lastValue) return;
+    _authenticate(value);
   }
 
   @override

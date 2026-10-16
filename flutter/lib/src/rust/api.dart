@@ -32,8 +32,9 @@ Future<void> setProxy({String? url}) =>
 /// `flutter_secure_storage`.  Returns `null` if there is no active session.
 Future<String?> exportSession() => RustLib.instance.api.crateApiExportSession();
 
-/// Request a Llave PIN.
-Future<FfiPinResult> requestPin() => RustLib.instance.api.crateApiRequestPin();
+/// Reveal the pending Cl@ve PIN: `data` is `{pin, time_to_live_seconds, nif}`;
+/// `time_to_live_seconds` is empty when the server sent no validity.
+Future<FfiApiResult> requestPin() => RustLib.instance.api.crateApiRequestPin();
 
 /// Get current session status.
 Future<FfiStatus> getStatus() => RustLib.instance.api.crateApiGetStatus();
@@ -52,6 +53,9 @@ Future<FfiApiResult> getMyData() => RustLib.instance.api.crateApiGetMyData();
 Future<FfiApiResult> getHistory() => RustLib.instance.api.crateApiGetHistory();
 
 /// Poll for pending authentication requests (single poll).
+///
+/// `data` is the pending `peticion` object, or `null` when there is nothing
+/// yet (codes meaning "keep polling" are folded in by the core).
 Future<FfiApiResult> getPendingRequests() =>
     RustLib.instance.api.crateApiGetPendingRequests();
 
@@ -212,31 +216,6 @@ class FfiNifCheckResult {
           nif == other.nif &&
           status == other.status &&
           responseJson == other.responseJson;
-}
-
-/// Result of a PIN request.
-class FfiPinResult {
-  final String pin;
-  final String timeToLiveSeconds;
-  final String nif;
-
-  const FfiPinResult({
-    required this.pin,
-    required this.timeToLiveSeconds,
-    required this.nif,
-  });
-
-  @override
-  int get hashCode => pin.hashCode ^ timeToLiveSeconds.hashCode ^ nif.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is FfiPinResult &&
-          runtimeType == other.runtimeType &&
-          pin == other.pin &&
-          timeToLiveSeconds == other.timeToLiveSeconds &&
-          nif == other.nif;
 }
 
 /// Status of the current session.

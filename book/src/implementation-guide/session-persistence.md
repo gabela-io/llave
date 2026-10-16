@@ -49,6 +49,8 @@ graph TD
    - `deactivate`, only once the server confirms. On any other `KO` the credentials are kept so the user can retry;
    - automatically on error `105`/`109` (device revoked), as the app does. Error `416` does **not** delete the session.
 
+   In Flutter the core reports these as error kind `device_revoked`; `AuthNotifier.reportFailure` then deletes the sealed blob too. A failed `deactivate` keeps it and shows the error.
+
    `Session::delete()` also resets the in-memory poll cursor and the shared HTTP client.
 
 ## FFI Bridge Pattern
@@ -79,8 +81,9 @@ The CLI seals the session with a PIN like the app, because the keyring crate's
 (and WSL kernels lack persistent keyrings).
 
 ```
-activate:  first save, no sealed file -> PinRequest::Create (entered twice)
-           -> seal_session -> session.sealed (0600) + kernel keyring cache
+activate:  before any request, storage::prepare_new_session -> PinRequest::Create
+           (entered twice, 3 tries), so a typo cannot lose server-side credentials
+           first save -> seal_session -> session.sealed (0600) + kernel keyring cache
 command:   kernel keyring cache hit   -> no PIN
            cache empty (after reboot) -> PinRequest::Unlock (3 attempts)
            -> open_session -> refill cache

@@ -128,7 +128,7 @@ abstract class RustLibApi extends BaseApi {
   Future<FfiApiResult> crateApiRejectRequest(
       {required String token, required String idpCode});
 
-  Future<FfiPinResult> crateApiRequestPin();
+  Future<FfiApiResult> crateApiRequestPin();
 
   Future<void> crateApiSetProxy({String? url});
 
@@ -610,7 +610,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<FfiPinResult> crateApiRequestPin() {
+  Future<FfiApiResult> crateApiRequestPin() {
     return handler.executeNormal(NormalTask(
       callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
@@ -618,7 +618,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             funcId: 19, port: port_);
       },
       codec: SseCodec(
-        decodeSuccessData: sse_decode_ffi_pin_result,
+        decodeSuccessData: sse_decode_ffi_api_result,
         decodeErrorData: sse_decode_String,
       ),
       constMeta: kCrateApiRequestPinConstMeta,
@@ -721,19 +721,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  FfiPinResult dco_decode_ffi_pin_result(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
-    return FfiPinResult(
-      pin: dco_decode_String(arr[0]),
-      timeToLiveSeconds: dco_decode_String(arr[1]),
-      nif: dco_decode_String(arr[2]),
-    );
-  }
-
-  @protected
   FfiStatus dco_decode_ffi_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -810,16 +797,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_responseJson = sse_decode_String(deserializer);
     return FfiNifCheckResult(
         nif: var_nif, status: var_status, responseJson: var_responseJson);
-  }
-
-  @protected
-  FfiPinResult sse_decode_ffi_pin_result(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_pin = sse_decode_String(deserializer);
-    var var_timeToLiveSeconds = sse_decode_String(deserializer);
-    var var_nif = sse_decode_String(deserializer);
-    return FfiPinResult(
-        pin: var_pin, timeToLiveSeconds: var_timeToLiveSeconds, nif: var_nif);
   }
 
   @protected
@@ -902,14 +879,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.nif, serializer);
     sse_encode_String(self.status, serializer);
     sse_encode_String(self.responseJson, serializer);
-  }
-
-  @protected
-  void sse_encode_ffi_pin_result(FfiPinResult self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.pin, serializer);
-    sse_encode_String(self.timeToLiveSeconds, serializer);
-    sse_encode_String(self.nif, serializer);
   }
 
   @protected

@@ -233,14 +233,20 @@ fn prompt_pin(request: PinRequest) -> Result<zeroize::Zeroizing<String>> {
     };
     match request {
         PinRequest::Create => {
-            let pin = read(&format!(
-                "Choose a PIN to protect your Llave credentials (min {} characters): ",
-                llave_core::storage::MIN_PIN_LEN
-            ))?;
-            if *read("Repeat the PIN: ")? != *pin {
-                return Err(LlaveError::Config("PINs do not match".into()));
+            let min = llave_core::storage::MIN_PIN_LEN;
+            for _ in 0..llave_core::storage::UNLOCK_ATTEMPTS {
+                let pin = read(&format!(
+                    "Choose a PIN to protect your Llave credentials (min {min} characters): "
+                ))?;
+                if pin.chars().count() < min {
+                    eprintln!("The PIN must have at least {min} characters.");
+                } else if *read("Repeat the PIN: ")? != *pin {
+                    eprintln!("The PINs do not match.");
+                } else {
+                    return Ok(pin);
+                }
             }
-            Ok(pin)
+            Err(LlaveError::Config("No PIN chosen".into()))
         }
         PinRequest::Unlock { attempt } => read(&format!(
             "Llave PIN ({attempt}/{}): ",
@@ -377,6 +383,9 @@ async fn run(cli: &Cli) -> Result<()> {
                     "This device is already activated. Run `llave deactivate` (or `llave logout`) first.".into(),
                 ));
             }
+            // Choose the local PIN first: once the server activates the device,
+            // a PIN typo must not be able to lose the new credentials.
+            llave_core::storage::prepare_new_session()?;
             let client = LlaveClient::new()?;
 
             // Phase 1: DNI/NIE auth → registration check → SMS sent.

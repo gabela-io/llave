@@ -1,10 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
+import '../src/api_helpers.dart';
+import '../src/auth_provider.dart';
 import '../src/errors.dart';
 import '../src/llave_bridge.dart';
 import '../widgets/request_card.dart';
@@ -20,7 +21,8 @@ enum _Phase { idle, waiting, found }
 class PendingScreen extends ConsumerStatefulWidget {
   const PendingScreen({
     super.key,
-    this.pollInterval = const Duration(seconds: 3),
+    // The CLI's default interval; about 24 queries per wait.
+    this.pollInterval = const Duration(seconds: 5),
     this.waitTimeout = const Duration(minutes: 2),
   });
 
@@ -92,14 +94,22 @@ class _PendingScreenState extends ConsumerState<PendingScreen> {
   }
 
   Future<void> _poll(int generation) async {
-    final result = await ref.read(llaveBridgeProvider).getPendingRequests();
+    LlaveApiResult result;
+    try {
+      result = await ref.read(llaveBridgeProvider).getPendingRequests();
+    } catch (e) {
+      result = LlaveApiResult.exception(e);
+    }
     if (!mounted || generation != _generation) return;
 
+    final l10n = AppLocalizations.of(context)!;
     if (!result.ok) {
-      _stopWaiting(friendlyError(AppLocalizations.of(context)!, result));
+      _stopWaiting(friendlyError(l10n, result));
+      await ref.read(authProvider.notifier).reportFailure(result);
       return;
     }
-    final peticion = jsonDecode(result.data);
+    // `data` is the pending request, or `null` while there is none.
+    final peticion = tryJsonDecode(result.data);
     if (peticion is Map<String, dynamic>) {
       _stopTimers();
       setState(() {
@@ -121,9 +131,14 @@ class _PendingScreenState extends ConsumerState<PendingScreen> {
 
     setState(() => _busy = true);
     final bridge = ref.read(llaveBridgeProvider);
-    final result = confirm
-        ? await bridge.confirmRequest(token, code)
-        : await bridge.rejectRequest(token, code);
+    LlaveApiResult result;
+    try {
+      result = confirm
+          ? await bridge.confirmRequest(token, code)
+          : await bridge.rejectRequest(token, code);
+    } catch (e) {
+      result = LlaveApiResult.exception(e);
+    }
     if (!mounted) return;
     setState(() => _busy = false);
 
@@ -131,16 +146,18 @@ class _PendingScreenState extends ConsumerState<PendingScreen> {
       messenger.showSnackBar(
         SnackBar(content: Text(friendlyError(l10n, result))),
       );
+      await ref.read(authProvider.notifier).reportFailure(result);
       return;
     }
     messenger.showSnackBar(
       SnackBar(content: Text(confirm ? l10n.requestConfirmed : l10n.requestRejected)),
     );
 
-    // The server says whether another request is already queued.
-    final data = jsonDecode(result.data);
-    final morePending = data is Map && data['pending_requests'] == 'S';
-    if (confirm && morePending) {
+    // Like the app, look for the next request after a confirm or a reject
+    // unless the server says there is none (`more_pending`, from the core).
+    final data = tryJsonDecode(result.data);
+    final morePending = data is! Map || data['more_pending'] != false;
+    if (morePending) {
       _startWaiting();
     } else {
       _stopWaiting();

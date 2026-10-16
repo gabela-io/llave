@@ -17,16 +17,18 @@ const _peticion = {
 /// Bridge that answers polls from a queue (then "nothing") and records
 /// confirm/reject calls.
 class _FakeBridge extends MockLlaveBridge {
-  _FakeBridge(this.polls, {this.pendingAfterConfirm = 'N'});
+  _FakeBridge(this.polls, {this.morePending = false, this.throwOnPoll = false});
 
   final List<Map<String, Object?>?> polls;
-  final String pendingAfterConfirm;
+  final bool morePending;
+  final bool throwOnPoll;
   int pollCount = 0;
   final confirmed = <String>[];
   final rejected = <String>[];
 
   @override
   Future<LlaveApiResult> getPendingRequests() async {
+    if (throwOnPoll) throw Exception('native library failed');
     final next = pollCount < polls.length ? polls[pollCount] : null;
     pollCount++;
     return LlaveApiResult(ok: true, data: jsonEncode(next));
@@ -37,14 +39,17 @@ class _FakeBridge extends MockLlaveBridge {
     confirmed.add('$token/$idpCode');
     return LlaveApiResult(
       ok: true,
-      data: jsonEncode({'status': 'OK', 'pending_requests': pendingAfterConfirm}),
+      data: jsonEncode({'status': 'OK', 'more_pending': morePending}),
     );
   }
 
   @override
   Future<LlaveApiResult> rejectRequest(String token, String idpCode) async {
     rejected.add('$token/$idpCode');
-    return const LlaveApiResult(ok: true, data: '{"status":"OK"}');
+    return LlaveApiResult(
+      ok: true,
+      data: jsonEncode({'status': 'OK', 'more_pending': morePending}),
+    );
   }
 }
 
@@ -107,7 +112,7 @@ void main() {
   });
 
   testWidgets('keeps waiting after confirm when more requests are pending', (tester) async {
-    final bridge = _FakeBridge([_peticion], pendingAfterConfirm: 'S');
+    final bridge = _FakeBridge([_peticion], morePending: true);
     await _pump(tester, bridge);
     await tester.pump();
 
@@ -141,5 +146,28 @@ void main() {
 
     expect(bridge.pollCount, polls);
     expect(find.text('Wait for a login'), findsOneWidget);
+  });
+
+  testWidgets('keeps waiting after a reject when more requests are pending', (tester) async {
+    final bridge = _FakeBridge([_peticion], morePending: true);
+    await _pump(tester, bridge);
+    await tester.pump();
+
+    await tester.tap(find.text('No, reject'));
+    await tester.pump();
+
+    expect(find.text('Waiting for a login request…'), findsOneWidget);
+  });
+
+  testWidgets('stops with a message when polling fails', (tester) async {
+    await _pump(tester, _FakeBridge([], throwOnPoll: true));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Wait for a login'), findsOneWidget);
+    expect(
+      find.text('Unexpected response from the AEAT servers. Try again later.'),
+      findsOneWidget,
+    );
   });
 }

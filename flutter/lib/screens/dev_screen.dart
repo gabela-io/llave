@@ -81,9 +81,7 @@ class _DevScreenState extends ConsumerState<DevScreen> {
                 ? null
                 : () => _runAction(() async {
                       final result = await bridge.requestPin();
-                      return 'PIN: ${result.pin}\n'
-                          'TTL: ${result.timeToLiveSeconds}s\n'
-                          'NIF: ${result.nif}';
+                      return result.ok ? result.data : 'Error: ${result.error}';
                     }),
           ),
           _ActionTile(

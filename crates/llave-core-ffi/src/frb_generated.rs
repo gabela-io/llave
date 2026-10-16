@@ -842,20 +842,6 @@ impl SseDecode for crate::api::FfiNifCheckResult {
     }
 }
 
-impl SseDecode for crate::api::FfiPinResult {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_pin = <String>::sse_decode(deserializer);
-        let mut var_timeToLiveSeconds = <String>::sse_decode(deserializer);
-        let mut var_nif = <String>::sse_decode(deserializer);
-        return crate::api::FfiPinResult {
-            pin: var_pin,
-            time_to_live_seconds: var_timeToLiveSeconds,
-            nif: var_nif,
-        };
-    }
-}
-
 impl SseDecode for crate::api::FfiStatus {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1003,23 +989,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::FfiNifCheckResult>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::FfiPinResult {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.pin.into_into_dart().into_dart(),
-            self.time_to_live_seconds.into_into_dart().into_dart(),
-            self.nif.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::FfiPinResult {}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::FfiPinResult> for crate::api::FfiPinResult {
-    fn into_into_dart(self) -> crate::api::FfiPinResult {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::FfiStatus {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -1070,15 +1039,6 @@ impl SseEncode for crate::api::FfiNifCheckResult {
         <String>::sse_encode(self.nif, serializer);
         <String>::sse_encode(self.status, serializer);
         <String>::sse_encode(self.response_json, serializer);
-    }
-}
-
-impl SseEncode for crate::api::FfiPinResult {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.pin, serializer);
-        <String>::sse_encode(self.time_to_live_seconds, serializer);
-        <String>::sse_encode(self.nif, serializer);
     }
 }
 

@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
+import '../src/api_helpers.dart';
+import '../src/auth_provider.dart';
 import '../src/biometric_service.dart';
+import '../src/errors.dart';
+import '../src/ip_rate_limit.dart';
 import '../src/llave_bridge.dart';
 
 /// Reveals the pending Cl@ve PIN (requested on the AEAT website) with a
@@ -21,9 +25,6 @@ class PinCard extends ConsumerStatefulWidget {
 }
 
 class _PinCardState extends ConsumerState<PinCard> {
-  /// Error text the Rust core uses for `LlaveError::NoPendingPin`.
-  static const _noPendingMarker = 'No pending Cl@ve PIN';
-
   String? _pin;
   int _remaining = 0;
   bool _loading = false;
@@ -52,22 +53,34 @@ class _PinCardState extends ConsumerState<PinCard> {
       if (!await confirm()) return;
       final result = await ref.read(llaveBridgeProvider).requestPin();
       if (!mounted) return;
-      _startCountdown(result.pin, int.tryParse(result.timeToLiveSeconds) ?? 0);
+      final data = result.ok ? tryJsonDecode(result.data) : null;
+      final pin = data is Map<String, dynamic> ? data['pin'] as String? : null;
+      if (pin == null) {
+        setState(() => _message =
+            result.ok ? l10n.errorUnexpectedResponse : friendlyError(l10n, result));
+        if (!result.ok) {
+          if (isIpRateLimited(result.error)) showIpRateLimitBanner(context);
+          await ref.read(authProvider.notifier).reportFailure(result);
+        }
+        return;
+      }
+      _show(pin, int.tryParse(data['time_to_live_seconds'] as String? ?? ''));
     } catch (e) {
-      if (!mounted) return;
-      final text = e.toString();
-      setState(() => _message = text.contains(_noPendingMarker) ? l10n.pinNoPending : text);
+      if (mounted) setState(() => _message = l10n.errorUnexpectedResponse);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  void _startCountdown(String pin, int seconds) {
+  /// Show [pin]; with a validity, count down and hide it when it expires.
+  /// Without one it stays until the user hides it.
+  void _show(String pin, int? seconds) {
     _timer?.cancel();
     setState(() {
       _pin = pin;
-      _remaining = seconds;
+      _remaining = seconds ?? 0;
     });
+    if (seconds == null || seconds <= 0) return;
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_remaining <= 1) {
         _hide();
@@ -130,7 +143,9 @@ class _PinCardState extends ConsumerState<PinCard> {
               const SizedBox(height: 4),
               Row(
                 children: [
-                  Expanded(child: Text(l10n.pinValidFor(_remaining))),
+                  Expanded(
+                    child: _remaining > 0 ? Text(l10n.pinValidFor(_remaining)) : const SizedBox(),
+                  ),
                   TextButton(onPressed: _hide, child: Text(l10n.pinHide)),
                 ],
               ),

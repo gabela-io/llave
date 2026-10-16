@@ -252,11 +252,7 @@ pub async fn dni_request_sms(
         state_resp = client.clave_request_state().await?;
     }
     if state_resp.status != "OK" {
-        return Err(crate::error::LlaveError::Api {
-            status: state_resp.status,
-            code: state_resp.codigo_error.unwrap_or_default(),
-            message: state_resp.mensaje.unwrap_or_else(|| "Registration state check failed".into()),
-        });
+        return Err(state_resp.ko_error("Registration state check failed"));
     }
     let state = state_resp.respuesta.ok_or_else(|| crate::error::LlaveError::Api {
         status: "OK".into(),
@@ -275,11 +271,7 @@ pub async fn dni_request_sms(
     tracing::info!("requesting SMS verification code");
     let sms_resp = client.request_sms_code().await?;
     if sms_resp.status != "OK" {
-        return Err(crate::error::LlaveError::Api {
-            status: sms_resp.status,
-            code: sms_resp.codigo_error.unwrap_or_default(),
-            message: sms_resp.mensaje.unwrap_or_else(|| "SMS request failed".into()),
-        });
+        return Err(sms_resp.ko_error("SMS request failed"));
     }
     let sms = sms_resp.respuesta.ok_or_else(|| crate::error::LlaveError::Api {
         status: "OK".into(),
@@ -328,11 +320,7 @@ pub async fn dni_validate_and_activate(
         .validate_sms_code(timestamp_alta_sms, token_clave_movil_sms, sms_pin)
         .await?;
     if validate_resp.status != "OK" {
-        return Err(crate::error::LlaveError::Api {
-            status: validate_resp.status,
-            code: validate_resp.codigo_error.unwrap_or_default(),
-            message: validate_resp.mensaje.unwrap_or_else(|| "SMS validation failed".into()),
-        });
+        return Err(validate_resp.ko_error("SMS validation failed"));
     }
     tracing::info!("SMS code validated (pin24H cookie should be set)");
 
@@ -340,11 +328,7 @@ pub async fn dni_validate_and_activate(
     tracing::info!("activating device");
     let activate_resp = client.activate_authentication(device_password, "").await?;
     if activate_resp.status != "OK" {
-        return Err(crate::error::LlaveError::Api {
-            status: activate_resp.status,
-            code: activate_resp.codigo_error.unwrap_or_default(),
-            message: activate_resp.mensaje.unwrap_or_else(|| "Device activation failed".into()),
-        });
+        return Err(activate_resp.ko_error("Device activation failed"));
     }
 
     let activate_data = activate_resp.respuesta.ok_or_else(|| crate::error::LlaveError::Api {
@@ -383,13 +367,7 @@ pub async fn poll_pending_requests(
     // "got data with null fields".
     if operations.status != "OK" {
         check_device_active(operations.codigo_error.as_deref(), operations.mensaje.as_deref())?;
-        return Err(crate::LlaveError::Api {
-            status: operations.status,
-            code: operations.codigo_error.unwrap_or_default(),
-            message: operations
-                .mensaje
-                .unwrap_or_else(|| "No pending operations".into()),
-        });
+        return Err(operations.ko_error("No pending operations"));
     }
 
     // Like the app: ignore a request older than the cursor, then advance it.
@@ -461,11 +439,7 @@ pub async fn confirm_authentication(
         .await?;
 
     if resp.status != "OK" {
-        return Err(crate::LlaveError::Api {
-            status: resp.status,
-            code: resp.codigo_error.unwrap_or_default(),
-            message: resp.mensaje.unwrap_or_else(|| "Confirm failed".into()),
-        });
+        return Err(resp.ko_error("Confirm failed"));
     }
 
     // Step 2: validate on www12 to complete the SSO session (matches APK).
@@ -483,9 +457,11 @@ pub async fn confirm_authentication(
         tracing::info!("no WWW12 cookie — skipping ValidarClaveMovil");
     }
 
+    let pending = resp.respuesta.as_ref().and_then(|r| r.pending_requests.as_deref());
     Ok(serde_json::json!({
         "status": resp.status,
-        "pending_requests": resp.respuesta.as_ref().and_then(|r| r.pending_requests.as_deref()),
+        "pending_requests": pending,
+        "more_pending": more_pending(pending),
     }))
 }
 
@@ -571,17 +547,26 @@ pub async fn reject_authentication(
         .await?;
 
     if resp.status != "OK" {
-        return Err(crate::LlaveError::Api {
-            status: resp.status,
-            code: resp.codigo_error.unwrap_or_default(),
-            message: resp.mensaje.unwrap_or_else(|| "Reject failed".into()),
-        });
+        return Err(resp.ko_error("Reject failed"));
     }
 
+    let pending = resp
+        .respuesta
+        .as_ref()
+        .and_then(|r| r.get("pending_requests"))
+        .and_then(|v| v.as_str());
     Ok(serde_json::json!({
         "status": resp.status,
+        "pending_requests": pending,
+        "more_pending": more_pending(pending),
         "response": resp.respuesta,
     }))
+}
+
+/// Whether to look for another request after a confirm or reject. Like the
+/// app, a missing `pending_requests` counts as "S" (`ClaveDeviceActiveFragment`).
+fn more_pending(pending_requests: Option<&str>) -> bool {
+    pending_requests.unwrap_or("S") == "S"
 }
 
 /// Continuously poll for pending requests (blocking loop for CLI).
@@ -864,6 +849,13 @@ fn ttl_ms_to_seconds(ttl_ms: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn more_pending_follows_the_app() {
+        assert!(more_pending(Some("S")));
+        assert!(more_pending(None));
+        assert!(!more_pending(Some("N")));
+    }
 
     // -- has_pending_pin --
 

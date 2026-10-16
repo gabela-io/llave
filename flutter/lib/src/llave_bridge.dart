@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // Generated FFI bindings — available after running flutter_rust_bridge_codegen.
@@ -45,18 +47,6 @@ class LlaveStatus {
         hasFirebaseToken = false;
 }
 
-class LlavePinResult {
-  final String pin;
-  final String timeToLiveSeconds;
-  final String nif;
-
-  const LlavePinResult({
-    required this.pin,
-    required this.timeToLiveSeconds,
-    required this.nif,
-  });
-}
-
 class LlaveApiResult {
   final bool ok;
   final String data;
@@ -78,6 +68,11 @@ class LlaveApiResult {
     this.errorCode,
     this.serverMessage,
   });
+
+  /// A failure from an exception thrown on the Dart side (for example the
+  /// native library), rather than an error reported by the core.
+  factory LlaveApiResult.exception(Object e) =>
+      LlaveApiResult(ok: false, data: '', error: e.toString(), errorCode: 'exception');
 
   factory LlaveApiResult.fromFfi(ffi.FfiApiResult r) => LlaveApiResult(
         ok: r.ok,
@@ -115,7 +110,9 @@ abstract class LlaveBridge {
   /// Export the current session as JSON for secure storage persistence.
   String? exportSession();
 
-  Future<LlavePinResult> requestPin();
+  /// Reveal the pending PIN: `data` is `{pin, time_to_live_seconds, nif}`;
+  /// `time_to_live_seconds` is empty when the server sent no validity.
+  Future<LlaveApiResult> requestPin();
   LlaveStatus getStatus();
   Future<LlaveNifCheckResult> checkNif(String? nif);
   Future<LlaveApiResult> getMyData();
@@ -168,14 +165,13 @@ class MockLlaveBridge implements LlaveBridge {
   }
 
   @override
-  Future<LlavePinResult> requestPin() async {
+  Future<LlaveApiResult> requestPin() async {
     _requireSession();
     await Future<void>.delayed(const Duration(milliseconds: 800));
     final pin = (100000 + (DateTime.now().microsecond % 900000)).toString();
-    return LlavePinResult(
-      pin: pin,
-      timeToLiveSeconds: '180',
-      nif: _session!.nif,
+    return LlaveApiResult(
+      ok: true,
+      data: jsonEncode({'pin': pin, 'time_to_live_seconds': '180', 'nif': _session!.nif}),
     );
   }
 
@@ -361,14 +357,8 @@ class RealLlaveBridge implements LlaveBridge {
   String? exportSession() => ffi.exportSession();
 
   @override
-  Future<LlavePinResult> requestPin() async {
-    final r = await ffi.requestPin();
-    return LlavePinResult(
-      pin: r.pin,
-      timeToLiveSeconds: r.timeToLiveSeconds,
-      nif: r.nif,
-    );
-  }
+  Future<LlaveApiResult> requestPin() async =>
+      LlaveApiResult.fromFfi(await ffi.requestPin());
 
   @override
   LlaveStatus getStatus() {

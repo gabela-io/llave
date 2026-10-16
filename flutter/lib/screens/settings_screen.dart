@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../src/auth_provider.dart';
 import '../src/biometric_service.dart';
+import '../src/errors.dart';
 import '../src/routes.dart';
 import '../src/llave_bridge.dart';
 import '../src/proxy_provider.dart';
@@ -94,9 +95,22 @@ class SettingsScreen extends ConsumerWidget {
                   actions: [
                     TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.cancel)),
                     FilledButton(
-                      onPressed: () {
+                      onPressed: () async {
                         Navigator.pop(ctx);
-                        ref.read(authProvider.notifier).deactivate();
+                        final messenger = ScaffoldMessenger.of(context);
+                        LlaveApiResult result;
+                        try {
+                          result = await ref.read(authProvider.notifier).deactivate();
+                        } catch (e) {
+                          result = LlaveApiResult.exception(e);
+                        }
+                        // On failure the device stays active: keep the
+                        // credentials and say why, so the user can retry.
+                        if (!result.ok && result.errorCode != AuthNotifier.deviceRevokedCode) {
+                          messenger.showSnackBar(
+                            SnackBar(content: Text(friendlyError(l10n, result))),
+                          );
+                        }
                       },
                       child: Text(l10n.deactivate),
                     ),

@@ -86,6 +86,10 @@ impl LlaveError {
             Self::Json(_) => "json",
             Self::DniAuthFailed => "dni_auth_failed",
             Self::HtmlResponse { .. } => "html_response",
+            // 105/109: the device was revoked; like the app, forget it locally.
+            Self::DeviceNotActive { code, .. } if matches!(code.as_str(), "105" | "109") => {
+                "device_revoked"
+            }
             Self::DeviceNotActive { .. } => "device_not_active",
             Self::NotRegistered => "not_registered",
             Self::NoRegisteredPhone => "no_registered_phone",
@@ -123,6 +127,14 @@ mod tests {
         assert_eq!(LlaveError::NoPendingPin.kind(), "no_pending_pin");
         let api = LlaveError::Api { status: "KO".into(), code: "416".into(), message: "x".into() };
         assert_eq!(api.kind(), "api");
+    }
+
+    #[test]
+    fn revoked_device_has_its_own_kind() {
+        let err = |code: &str| LlaveError::DeviceNotActive { code: code.into(), message: String::new() };
+        assert_eq!(err("105").kind(), "device_revoked");
+        assert_eq!(err("109").kind(), "device_revoked");
+        assert_eq!(err("416").kind(), "device_not_active");
     }
 
     #[test]

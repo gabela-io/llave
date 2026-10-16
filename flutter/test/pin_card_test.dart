@@ -5,23 +5,29 @@ import 'package:llave/l10n/app_localizations.dart';
 import 'package:llave/src/llave_bridge.dart';
 import 'package:llave/widgets/pin_card.dart';
 
-/// Bridge whose [requestPin] answers with a fixed result or error.
+/// Bridge whose [requestPin] answers with a fixed result.
 class _FakeBridge extends MockLlaveBridge {
-  _FakeBridge({this.result, this.error});
+  _FakeBridge({LlaveApiResult? result}) : result = result ?? _result;
 
-  final LlavePinResult? result;
-  final Object? error;
+  final LlaveApiResult result;
   int calls = 0;
 
   @override
-  Future<LlavePinResult> requestPin() async {
+  Future<LlaveApiResult> requestPin() async {
     calls++;
-    if (error != null) throw error!;
-    return result!;
+    return result;
   }
 }
 
-const _result = LlavePinResult(pin: '424242', timeToLiveSeconds: '3', nif: '12345678Z');
+LlaveApiResult _pin(String ttl) => LlaveApiResult(
+      ok: true,
+      data: '{"pin":"424242","time_to_live_seconds":"$ttl","nif":"12345678Z"}',
+    );
+
+final _result = _pin('3');
+
+LlaveApiResult _failure(String code) =>
+    LlaveApiResult(ok: false, data: '', error: 'English text', errorCode: code);
 
 Future<void> _pump(
   WidgetTester tester,
@@ -45,14 +51,14 @@ Future<void> _pump(
 
 void main() {
   testWidgets('starts hidden with a reveal button', (tester) async {
-    await _pump(tester, _FakeBridge(result: _result));
+    await _pump(tester, _FakeBridge());
 
     expect(find.text('Show PIN'), findsOneWidget);
     expect(find.text('424242'), findsNothing);
   });
 
   testWidgets('reveals the pending PIN with its validity', (tester) async {
-    await _pump(tester, _FakeBridge(result: _result));
+    await _pump(tester, _FakeBridge());
 
     await tester.tap(find.text('Show PIN'));
     await tester.pump();
@@ -62,7 +68,7 @@ void main() {
   });
 
   testWidgets('counts down and hides the PIN when it expires', (tester) async {
-    await _pump(tester, _FakeBridge(result: _result));
+    await _pump(tester, _FakeBridge());
     await tester.tap(find.text('Show PIN'));
     await tester.pump();
 
@@ -75,7 +81,7 @@ void main() {
   });
 
   testWidgets('hide button hides the PIN', (tester) async {
-    await _pump(tester, _FakeBridge(result: _result));
+    await _pump(tester, _FakeBridge());
     await tester.tap(find.text('Show PIN'));
     await tester.pump();
 
@@ -86,9 +92,7 @@ void main() {
   });
 
   testWidgets('explains when there is no pending PIN', (tester) async {
-    final bridge = _FakeBridge(
-      error: Exception('No pending Cl@ve PIN. Start a PIN request on the AEAT website'),
-    );
+    final bridge = _FakeBridge(result: _failure('no_pending_pin'));
     await _pump(tester, bridge);
 
     await tester.tap(find.text('Show PIN'));
@@ -101,7 +105,7 @@ void main() {
   });
 
   testWidgets('does not request the PIN when presence is not confirmed', (tester) async {
-    final bridge = _FakeBridge(result: _result);
+    final bridge = _FakeBridge();
     await _pump(tester, bridge, confirmPresence: () async => false);
 
     await tester.tap(find.text('Show PIN'));
@@ -109,5 +113,25 @@ void main() {
 
     expect(bridge.calls, 0);
     expect(find.text('424242'), findsNothing);
+  });
+
+  testWidgets('keeps the PIN visible when the server sent no validity', (tester) async {
+    await _pump(tester, _FakeBridge(result: _pin('')));
+    await tester.tap(find.text('Show PIN'));
+    await tester.pump();
+
+    await tester.pump(const Duration(seconds: 5));
+    expect(find.text('424242'), findsOneWidget);
+  });
+
+  testWidgets('shows a readable message on a connection error', (tester) async {
+    await _pump(tester, _FakeBridge(result: _failure('http')));
+    await tester.tap(find.text('Show PIN'));
+    await tester.pump();
+
+    expect(
+      find.text('Could not reach the AEAT servers. Check your connection and try again.'),
+      findsOneWidget,
+    );
   });
 }

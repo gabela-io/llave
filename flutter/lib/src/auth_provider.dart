@@ -201,18 +201,32 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = const AuthUnauthenticated();
   }
 
-  /// Deactivate device remotely, then log out.
-  Future<void> deactivate() async {
+  /// Deactivate the device on the server, then forget it locally.
+  ///
+  /// Like the app, the local credentials are deleted only when the server
+  /// confirms (or reports the device as already revoked); otherwise they
+  /// are kept so the user can retry. Returns the server result.
+  Future<LlaveApiResult> deactivate() async {
     _log.info('deactivating device');
-    try {
-      await _bridge.deactivate();
-    } catch (e) {
-      _log.warning('remote deactivation failed: $e');
+    final result = await _bridge.deactivate();
+    if (result.ok || result.errorCode == deviceRevokedCode) {
+      await logout();
+    } else {
+      _log.warning('remote deactivation failed: ${result.error}');
     }
-    await BiometricService.disable();
-    await SecureSessionStore.delete();
-    state = const AuthUnauthenticated();
+    return result;
   }
+
+  /// React to a failed call: a device revoked by the server (105/109) is
+  /// forgotten locally, as the app does.
+  Future<void> reportFailure(LlaveApiResult result) async {
+    if (result.errorCode != deviceRevokedCode) return;
+    _log.warning('device revoked by the server — forgetting it');
+    await logout();
+  }
+
+  /// Error kind the core uses for a device revoked by the server.
+  static const deviceRevokedCode = 'device_revoked';
 }
 
 /// Auth state provider.

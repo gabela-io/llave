@@ -26,17 +26,6 @@ class FfiSession {
   });
 }
 
-class FfiPinResult {
-  final String pin;
-  final String timeToLiveSeconds;
-  final String nif;
-  const FfiPinResult({
-    required this.pin,
-    required this.timeToLiveSeconds,
-    required this.nif,
-  });
-}
-
 class FfiStatus {
   final bool active;
   final String? nif;
@@ -293,15 +282,10 @@ String changeSessionPin(
 // Async API (run in isolate to avoid blocking UI)
 // ---------------------------------------------------------------------------
 
-Future<FfiPinResult> requestPin() async {
+/// Reveal the pending PIN: `data` is `{pin, time_to_live_seconds, nif}`.
+Future<FfiApiResult> requestPin() async {
   final lp = nativeLibPath;
-  final r = await Isolate.run(() => _checkOk(_call0(lp, 'llave_request_pin')));
-  final d = r['data'] as Map<String, dynamic>;
-  return FfiPinResult(
-    pin: d['pin'] as String,
-    timeToLiveSeconds: d['timeToLiveSeconds'] as String,
-    nif: d['nif'] as String,
-  );
+  return Isolate.run(() => _toApiResult(_checkOk(_call0(lp, 'llave_request_pin'))));
 }
 
 Future<FfiNifCheckResult> checkNif({String? nif}) async {

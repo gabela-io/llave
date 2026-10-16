@@ -12,6 +12,7 @@ void main() {
 
   test('known kinds get a localised message', () {
     expect(friendlyError(l10n, _failure('device_not_active')), l10n.errorDeviceNotActive);
+    expect(friendlyError(l10n, _failure('device_revoked')), l10n.errorDeviceNotActive);
     expect(friendlyError(l10n, _failure('http')), l10n.errorNoConnection);
     expect(friendlyError(l10n, _failure('no_pending_pin')), l10n.pinNoPending);
   });

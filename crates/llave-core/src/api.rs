@@ -73,15 +73,13 @@ fn classify_dni_body(body: &str) -> Option<Result<()>> {
     if resp.status != "KO" {
         return Some(Ok(()));
     }
-    let code = resp.codigo_error.unwrap_or_default();
-    let message = resp.mensaje.unwrap_or_default();
-    Some(Err(match DniChallenge::from_code(&code) {
-        Some(challenge) => LlaveError::DniBirthDateRequired { challenge, message },
-        None => LlaveError::Api {
-            status: resp.status,
-            code,
-            message,
+    let challenge = resp.codigo_error.as_deref().and_then(DniChallenge::from_code);
+    Some(Err(match challenge {
+        Some(challenge) => LlaveError::DniBirthDateRequired {
+            challenge,
+            message: resp.mensaje.unwrap_or_default(),
         },
+        None => resp.ko_error(""),
     }))
 }
 
@@ -180,21 +178,27 @@ impl<T> ApiResponse<T> {
                     message: "Empty response payload".into(),
                 })
         } else {
-            let code = self.codigo_error.unwrap_or_default();
-            let message = self.mensaje.unwrap_or_else(|| "Unknown error".into());
-            tracing::error!(status = %self.status, code = %code, msg = %message, "api error");
-            if code == "16600" {
-                return Err(LlaveError::IpRateLimited { message });
-            }
+            Err(self.ko_error("Unknown error"))
+        }
+    }
+
+    /// The error for a non-`OK` response. Like the app, codes that mean the
+    /// same on every endpoint get their own error: `16600` (IP blocked for
+    /// the day) and `500600` (app too old). `fallback` is the message when
+    /// the server sends none.
+    pub fn ko_error(self, fallback: &str) -> LlaveError {
+        let code = self.codigo_error.unwrap_or_default();
+        let message = self.mensaje.unwrap_or_else(|| fallback.into());
+        tracing::error!(status = %self.status, code = %code, msg = %message, "api error");
+        match code.as_str() {
+            "16600" => LlaveError::IpRateLimited { message },
             // The app shows an "update the app" dialog for this code.
-            if code == "500600" {
-                return Err(LlaveError::AppVersionOutdated { message });
-            }
-            Err(LlaveError::Api {
+            "500600" => LlaveError::AppVersionOutdated { message },
+            _ => LlaveError::Api {
                 status: self.status,
                 code,
                 message,
-            })
+            },
         }
     }
 }
@@ -1041,6 +1045,44 @@ mod tests {
                 assert_eq!(message, "Introduzca fecha");
             }
             _ => panic!("expected DniBirthDateRequired"),
+        }
+    }
+
+    #[test]
+    fn dni_body_ip_block_is_rate_limited() {
+        let body = r#"{"status":"KO","codigo_error":"16600","mensaje":"Bloqueada"}"#;
+        assert!(matches!(
+            classify_dni_body(body),
+            Some(Err(LlaveError::IpRateLimited { .. }))
+        ));
+    }
+
+    fn ko(code: &str, mensaje: Option<&str>) -> ApiResponse<()> {
+        ApiResponse {
+            status: "KO".into(),
+            visible: None,
+            crashlytics: None,
+            codigo_error: Some(code.into()),
+            mensaje: mensaje.map(Into::into),
+            respuesta: None,
+        }
+    }
+
+    #[test]
+    fn ko_error_maps_special_codes() {
+        assert!(matches!(ko("16600", Some("m")).ko_error("x"), LlaveError::IpRateLimited { .. }));
+        assert!(matches!(
+            ko("500600", Some("m")).ko_error("x"),
+            LlaveError::AppVersionOutdated { .. }
+        ));
+        assert!(matches!(ko("300", Some("m")).ko_error("x"), LlaveError::Api { .. }));
+    }
+
+    #[test]
+    fn ko_error_without_message_uses_fallback() {
+        match ko("1", None).ko_error("SMS request failed") {
+            LlaveError::Api { message, .. } => assert_eq!(message, "SMS request failed"),
+            other => panic!("unexpected {other:?}"),
         }
     }
 

@@ -235,14 +235,7 @@ pub unsafe extern "C" fn llave_change_session_pin(
 
 #[no_mangle]
 pub extern "C" fn llave_request_pin() -> *mut c_char {
-    ffi_guard(|| match rt().block_on(crate::api::request_pin()) {
-        Ok(r) => ok_json(serde_json::json!({
-            "pin": r.pin,
-            "timeToLiveSeconds": r.time_to_live_seconds,
-            "nif": r.nif,
-        })),
-        Err(e) => err_json(&e),
-    })
+    ffi_guard(|| api_result_json(rt().block_on(crate::api::request_pin())))
 }
 
 /// # Safety

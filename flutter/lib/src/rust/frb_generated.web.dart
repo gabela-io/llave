@@ -33,9 +33,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   FfiNifCheckResult dco_decode_ffi_nif_check_result(dynamic raw);
 
   @protected
-  FfiPinResult dco_decode_ffi_pin_result(dynamic raw);
-
-  @protected
   FfiStatus dco_decode_ffi_status(dynamic raw);
 
   @protected
@@ -62,9 +59,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   FfiNifCheckResult sse_decode_ffi_nif_check_result(
       SseDeserializer deserializer);
-
-  @protected
-  FfiPinResult sse_decode_ffi_pin_result(SseDeserializer deserializer);
 
   @protected
   FfiStatus sse_decode_ffi_status(SseDeserializer deserializer);
@@ -96,9 +90,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_ffi_nif_check_result(
       FfiNifCheckResult self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_ffi_pin_result(FfiPinResult self, SseSerializer serializer);
 
   @protected
   void sse_encode_ffi_status(FfiStatus self, SseSerializer serializer);

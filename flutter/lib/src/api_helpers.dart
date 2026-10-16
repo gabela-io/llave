@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 
+import 'auth_provider.dart';
 import 'errors.dart';
 import 'ip_rate_limit.dart';
 import 'llave_bridge.dart';
@@ -38,6 +40,7 @@ Future<void> handleApiCall({
   // Resolve localisations before the async gap so the context is not used
   // after it may have been unmounted.
   final l10n = AppLocalizations.of(context);
+  final auth = ProviderScope.containerOf(context, listen: false).read(authProvider.notifier);
   try {
     final result = await apiCall();
     if (!result.ok) {
@@ -47,6 +50,7 @@ Future<void> handleApiCall({
       if (context.mounted && isIpRateLimited(result.error)) {
         showIpRateLimitBanner(context);
       }
+      await auth.reportFailure(result);
       return;
     }
     final decoded = tryJsonDecode(result.data);
@@ -57,7 +61,8 @@ Future<void> handleApiCall({
     await onData?.call(decoded);
   } catch (e) {
     final err = e.toString();
-    setError(err);
+    debugPrint('API call failed: $err');
+    setError(l10n?.errorUnexpectedResponse ?? err);
     if (context.mounted && isIpRateLimited(err)) {
       showIpRateLimitBanner(context);
     }

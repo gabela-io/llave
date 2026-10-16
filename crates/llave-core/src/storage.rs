@@ -15,6 +15,19 @@ pub trait SecureStorage: Send + Sync {
     fn save(&self, data: &str) -> Result<()>;
     fn load(&self) -> Result<String>;
     fn delete(&self) -> Result<()>;
+
+    /// Get ready to store a new session, before anything irreversible
+    /// happens (for example, ask for the PIN that will seal it).
+    fn prepare_new(&self) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// Get the storage backend ready for a new session. Call it before
+/// activating, so a failure here cannot lose credentials the server has
+/// already issued.
+pub fn prepare_new_session() -> Result<()> {
+    storage()?.prepare_new()
 }
 
 static STORAGE: OnceLock<Box<dyn SecureStorage>> = OnceLock::new();
@@ -167,23 +180,33 @@ impl SecureStorage for SealedFileStorage {
             }
         }
 
-        let mut pin = self.pin.lock();
-        if pin.is_none() && !self.path.exists() {
-            let new_pin = (self.prompt)(PinRequest::Create)?;
-            if new_pin.chars().count() < MIN_PIN_LEN {
-                return Err(LlaveError::Config(format!(
-                    "PIN must have at least {MIN_PIN_LEN} characters"
-                )));
-            }
-            *pin = Some(new_pin);
+        if !self.path.exists() {
+            self.prepare_new()?;
         }
-        match pin.as_deref() {
+        match self.pin.lock().as_deref() {
             Some(p) => self.write_sealed(data, p),
             None => {
                 tracing::debug!("PIN not unlocked in this process; updated cache only");
                 Ok(())
             }
         }
+    }
+
+    /// Ask for the PIN that will seal the next session, unless one is
+    /// already known in this process.
+    fn prepare_new(&self) -> Result<()> {
+        let mut pin = self.pin.lock();
+        if pin.is_some() {
+            return Ok(());
+        }
+        let new_pin = (self.prompt)(PinRequest::Create)?;
+        if new_pin.chars().count() < MIN_PIN_LEN {
+            return Err(LlaveError::Config(format!(
+                "PIN must have at least {MIN_PIN_LEN} characters"
+            )));
+        }
+        *pin = Some(new_pin);
+        Ok(())
     }
 
     fn load(&self) -> Result<String> {
@@ -386,6 +409,23 @@ mod tests {
         let (store, calls) = sealed(&dir, "1234");
         store.save("session").unwrap();
         assert_eq!(*calls.lock().unwrap(), vec![PinRequest::Create]);
+    }
+
+    #[test]
+    fn sealed_prepared_pin_is_used_by_the_first_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, calls) = sealed(&dir, "1234");
+        store.prepare_new().unwrap();
+        store.save("session").unwrap();
+        assert_eq!(*calls.lock().unwrap(), vec![PinRequest::Create]);
+        assert_eq!(sealed(&dir, "1234").0.load().unwrap(), "session");
+    }
+
+    #[test]
+    fn sealed_prepare_rejects_a_short_pin() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = sealed(&dir, "12");
+        assert!(store.prepare_new().is_err());
     }
 
     #[test]
