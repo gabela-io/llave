@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:smart_auth/smart_auth.dart';
 
 import '../src/api_helpers.dart';
@@ -12,7 +11,6 @@ import '../src/auth_provider.dart';
 import '../src/errors.dart';
 import '../src/ip_rate_limit.dart';
 import '../src/llave_bridge.dart';
-import '../src/routes.dart';
 
 class DniAuthScreen extends ConsumerStatefulWidget {
   const DniAuthScreen({super.key});
@@ -29,7 +27,6 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
   final _smsController = TextEditingController();
   bool _loading = false;
   String? _error;
-  bool _activated = false;
 
   // Document field for the typed NIF (`validity_date`, `birth_date`,
   // `support_number`), and the server's date-of-birth challenge, if any.
@@ -171,7 +168,7 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
       }
       _showError(friendlyError(l10n, result), raw: result.error);
     } catch (e) {
-      if (mounted) _showError(e.toString());
+      if (mounted) _showError(l10n.errorUnexpected, raw: e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -209,10 +206,8 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
         if (mounted) setState(() => _error = e);
       },
       context: context,
-      onData: (_) {
-        TextInput.finishAutofillContext();
-        setState(() => _activated = true);
-      },
+      // Activation sets AuthNeedsPin; the router then opens the PIN setup.
+      onData: (_) => TextInput.finishAutofillContext(),
     );
   }
 
@@ -228,45 +223,11 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: _activated
-              ? _buildSuccessView(theme, l10n)
-              : _maskedPhone != null
-                  ? _buildSmsView(theme, l10n)
-                  : _buildForm(theme, l10n),
+          child: _maskedPhone != null
+              ? _buildSmsView(theme, l10n)
+              : _buildForm(theme, l10n),
         ),
       ),
-    );
-  }
-
-  Widget _buildSuccessView(ThemeData theme, AppLocalizations l10n) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Card(
-          color: theme.colorScheme.primaryContainer,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(Icons.check_circle, color: theme.colorScheme.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    l10n.deviceActivated,
-                    style: TextStyle(color: theme.colorScheme.onPrimaryContainer),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: () => context.go(AppRoutes.home),
-          icon: const Icon(Icons.home),
-          label: Text(l10n.goToHome),
-        ),
-      ],
     );
   }
 

@@ -230,12 +230,6 @@ abstract class AppLocalizations {
   /// **'Confirm'**
   String get confirm;
 
-  /// No description provided for @reject.
-  ///
-  /// In en, this message translates to:
-  /// **'Reject'**
-  String get reject;
-
   /// No description provided for @save.
   ///
   /// In en, this message translates to:
@@ -332,6 +326,12 @@ abstract class AppLocalizations {
   /// **'Unexpected response from the AEAT servers. Try again later.'**
   String get errorUnexpectedResponse;
 
+  /// No description provided for @errorUnexpected.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong. Try again.'**
+  String get errorUnexpected;
+
   /// No description provided for @invalidResponse.
   ///
   /// In en, this message translates to:
@@ -416,24 +416,6 @@ abstract class AppLocalizations {
   /// **'This will clear your session. You can re-activate later.'**
   String get logOutMessage;
 
-  /// No description provided for @noActiveSession.
-  ///
-  /// In en, this message translates to:
-  /// **'No active session'**
-  String get noActiveSession;
-
-  /// No description provided for @activateToStart.
-  ///
-  /// In en, this message translates to:
-  /// **'Activate your device to get started.'**
-  String get activateToStart;
-
-  /// No description provided for @activateDevice.
-  ///
-  /// In en, this message translates to:
-  /// **'Activate Device'**
-  String get activateDevice;
-
   /// No description provided for @qrAuthentication.
   ///
   /// In en, this message translates to:
@@ -488,18 +470,6 @@ abstract class AppLocalizations {
   /// **'Pending Requests'**
   String get pendingTitle;
 
-  /// No description provided for @pendingEmptyTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'No pending requests'**
-  String get pendingEmptyTitle;
-
-  /// No description provided for @pendingEmptySubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Authentication requests will appear here\nwhen detected by the server.'**
-  String get pendingEmptySubtitle;
-
   /// No description provided for @requestConfirmed.
   ///
   /// In en, this message translates to:
@@ -511,30 +481,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Request rejected'**
   String get requestRejected;
-
-  /// No description provided for @failed.
-  ///
-  /// In en, this message translates to:
-  /// **'Failed'**
-  String get failed;
-
-  /// No description provided for @providerCode.
-  ///
-  /// In en, this message translates to:
-  /// **'Provider code: {code}'**
-  String providerCode(String code);
-
-  /// No description provided for @actionRequestTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'{action} request?'**
-  String actionRequestTitle(String action);
-
-  /// No description provided for @actionRequestMessage.
-  ///
-  /// In en, this message translates to:
-  /// **'Are you sure you want to {action} this authentication request?'**
-  String actionRequestMessage(String action);
 
   /// No description provided for @historyTitle.
   ///
@@ -559,36 +505,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Rejected'**
   String get rejected;
-
-  /// No description provided for @myDataTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'My Data'**
-  String get myDataTitle;
-
-  /// No description provided for @noData.
-  ///
-  /// In en, this message translates to:
-  /// **'No data'**
-  String get noData;
-
-  /// No description provided for @accountInformation.
-  ///
-  /// In en, this message translates to:
-  /// **'Account Information'**
-  String get accountInformation;
-
-  /// No description provided for @nifLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'NIF'**
-  String get nifLabel;
-
-  /// No description provided for @registrationLevel.
-  ///
-  /// In en, this message translates to:
-  /// **'Registration Level'**
-  String get registrationLevel;
 
   /// No description provided for @qrAuthTitle.
   ///
@@ -661,18 +577,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'DNI/NIE Authentication'**
   String get dniAuthTitle;
-
-  /// No description provided for @deviceActivated.
-  ///
-  /// In en, this message translates to:
-  /// **'Device activated successfully!'**
-  String get deviceActivated;
-
-  /// No description provided for @goToHome.
-  ///
-  /// In en, this message translates to:
-  /// **'Go to Home'**
-  String get goToHome;
 
   /// No description provided for @smsVerification.
   ///
@@ -941,7 +845,7 @@ abstract class AppLocalizations {
   /// No description provided for @poweredByValue.
   ///
   /// In en, this message translates to:
-  /// **'Rust core (llave-core) via flutter_rust_bridge'**
+  /// **'Rust core (llave-core) via FFI'**
   String get poweredByValue;
 
   /// No description provided for @developer.
@@ -1165,30 +1069,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Forgot PIN?'**
   String get forgotPin;
-
-  /// No description provided for @activateLlave.
-  ///
-  /// In en, this message translates to:
-  /// **'Activate Llave'**
-  String get activateLlave;
-
-  /// No description provided for @registerDevice.
-  ///
-  /// In en, this message translates to:
-  /// **'Register this device with your Cl@ve account.'**
-  String get registerDevice;
-
-  /// No description provided for @activateWithDni.
-  ///
-  /// In en, this message translates to:
-  /// **'Activate with DNI/NIE'**
-  String get activateWithDni;
-
-  /// No description provided for @dniActivateDescription.
-  ///
-  /// In en, this message translates to:
-  /// **'You will need the data printed on your physical DNI/NIE card and access to the phone number registered with Cl@ve.'**
-  String get dniActivateDescription;
 
   /// No description provided for @setYourPin.
   ///

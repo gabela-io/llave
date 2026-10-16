@@ -2,25 +2,22 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// Generated FFI bindings — available after running flutter_rust_bridge_codegen.
+// Hand-written dart:ffi bindings to the C ABI of llave-core-ffi.
 import 'rust/api/api.dart' as ffi;
 
 // ---------------------------------------------------------------------------
-// Dart-side models mirroring the FFI types from llave-core-ffi.
-// These will be replaced by flutter_rust_bridge generated types after codegen.
+// Dart-side models of the FFI results, shared by the native and mock bridges.
 // ---------------------------------------------------------------------------
 
 class LlaveSession {
   final String deviceId;
   final String nif;
   final String createdAt;
-  final bool hasFirebaseToken;
 
   const LlaveSession({
     required this.deviceId,
     required this.nif,
     required this.createdAt,
-    this.hasFirebaseToken = false,
   });
 }
 
@@ -29,22 +26,19 @@ class LlaveStatus {
   final String? nif;
   final String? deviceId;
   final String? createdAt;
-  final bool hasFirebaseToken;
 
   const LlaveStatus({
     required this.active,
     this.nif,
     this.deviceId,
     this.createdAt,
-    this.hasFirebaseToken = false,
   });
 
   const LlaveStatus.inactive()
       : active = false,
         nif = null,
         deviceId = null,
-        createdAt = null,
-        hasFirebaseToken = false;
+        createdAt = null;
 }
 
 class LlaveApiResult {
@@ -98,8 +92,8 @@ class LlaveNifCheckResult {
 // ---------------------------------------------------------------------------
 // Bridge service interface.
 //
-// MockLlaveBridge is used until flutter_rust_bridge codegen is run.
-// Then swap to RealLlaveBridge which calls the generated FFI functions.
+// RealLlaveBridge calls the Rust core; MockLlaveBridge fakes it for UI work
+// and tests. `bridgeTypeProvider` picks one.
 // ---------------------------------------------------------------------------
 
 abstract class LlaveBridge {
@@ -183,7 +177,6 @@ class MockLlaveBridge implements LlaveBridge {
       nif: _session!.nif,
       deviceId: _session!.deviceId,
       createdAt: _session!.createdAt,
-      hasFirebaseToken: _session!.hasFirebaseToken,
     );
   }
 
@@ -204,7 +197,7 @@ class MockLlaveBridge implements LlaveBridge {
     await Future<void>.delayed(const Duration(milliseconds: 600));
     return const LlaveApiResult(
       ok: true,
-      data: '{"nombre":"Mock User","telefono":"***1234","nivelAcceso":"AVANZADO"}',
+      data: '{"nif":"12345678Z","email":"mock@example.com","numTelefono":"***1234","nivelRegistro":"AVANZADO"}',
     );
   }
 
@@ -344,7 +337,7 @@ class MockLlaveBridge implements LlaveBridge {
 }
 
 // ---------------------------------------------------------------------------
-// Real bridge calling into Rust via flutter_rust_bridge FFI.
+// Real bridge calling into the Rust core through the C ABI.
 // ---------------------------------------------------------------------------
 
 class RealLlaveBridge implements LlaveBridge {
@@ -368,7 +361,6 @@ class RealLlaveBridge implements LlaveBridge {
       nif: s.nif,
       deviceId: s.deviceId,
       createdAt: s.createdAt,
-      hasFirebaseToken: s.hasFirebaseToken,
     );
   }
 

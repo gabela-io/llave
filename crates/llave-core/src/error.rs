@@ -36,10 +36,14 @@ pub enum LlaveError {
     #[error("This device is no longer active in Cl@ve (code {code}). Run `llave activate` again.")]
     DeviceNotActive { code: String, message: String },
 
-    #[error("This NIF is not registered in Cl@ve. Register first at the AEAT website or an office.")]
+    #[error(
+        "This NIF is not registered in Cl@ve. Register first at the AEAT website or an office."
+    )]
     NotRegistered,
 
-    #[error("Your Cl@ve registration has no mobile phone. Update your phone at the AEAT website first.")]
+    #[error(
+        "Your Cl@ve registration has no mobile phone. Update your phone at the AEAT website first."
+    )]
     NoRegisteredPhone,
 
     #[error("The AEAT server requires a newer app version: {message}")]
@@ -112,7 +116,9 @@ impl LlaveError {
             | Self::DeviceNotActive { message, .. }
             | Self::AppVersionOutdated { message }
             | Self::DniBirthDateRequired { message, .. }
-            | Self::IpRateLimited { message } => Some(message.as_str()).filter(|m| !m.trim().is_empty()),
+            | Self::IpRateLimited { message } => {
+                Some(message.as_str()).filter(|m| !m.trim().is_empty())
+            }
             _ => None,
         }
     }
@@ -125,13 +131,20 @@ mod tests {
     #[test]
     fn kind_identifies_the_variant() {
         assert_eq!(LlaveError::NoPendingPin.kind(), "no_pending_pin");
-        let api = LlaveError::Api { status: "KO".into(), code: "416".into(), message: "x".into() };
+        let api = LlaveError::Api {
+            status: "KO".into(),
+            code: "416".into(),
+            message: "x".into(),
+        };
         assert_eq!(api.kind(), "api");
     }
 
     #[test]
     fn revoked_device_has_its_own_kind() {
-        let err = |code: &str| LlaveError::DeviceNotActive { code: code.into(), message: String::new() };
+        let err = |code: &str| LlaveError::DeviceNotActive {
+            code: code.into(),
+            message: String::new(),
+        };
         assert_eq!(err("105").kind(), "device_revoked");
         assert_eq!(err("109").kind(), "device_revoked");
         assert_eq!(err("416").kind(), "device_not_active");
@@ -149,7 +162,11 @@ mod tests {
 
     #[test]
     fn blank_server_message_is_none() {
-        let api = LlaveError::Api { status: "KO".into(), code: "300".into(), message: " ".into() };
+        let api = LlaveError::Api {
+            status: "KO".into(),
+            code: "300".into(),
+            message: " ".into(),
+        };
         assert_eq!(api.server_message(), None);
         assert_eq!(LlaveError::InvalidQr.server_message(), None);
     }

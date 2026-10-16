@@ -166,7 +166,7 @@ void main() {
 
     expect(find.text('Wait for a login'), findsOneWidget);
     expect(
-      find.text('Unexpected response from the AEAT servers. Try again later.'),
+      find.text('Something went wrong. Try again.'),
       findsOneWidget,
     );
   });

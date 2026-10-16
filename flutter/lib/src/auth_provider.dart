@@ -135,7 +135,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
         deviceId: status.deviceId!,
         nif: status.nif!,
         createdAt: status.createdAt!,
-        hasFirebaseToken: status.hasFirebaseToken,
       ));
     } else {
       _log.info('no session');

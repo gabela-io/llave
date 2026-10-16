@@ -724,14 +724,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   FfiStatus dco_decode_ffi_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return FfiStatus(
       active: dco_decode_bool(arr[0]),
       nif: dco_decode_opt_String(arr[1]),
       deviceId: dco_decode_opt_String(arr[2]),
       createdAt: dco_decode_opt_String(arr[3]),
-      hasFirebaseToken: dco_decode_bool(arr[4]),
     );
   }
 
@@ -806,13 +805,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_nif = sse_decode_opt_String(deserializer);
     var var_deviceId = sse_decode_opt_String(deserializer);
     var var_createdAt = sse_decode_opt_String(deserializer);
-    var var_hasFirebaseToken = sse_decode_bool(deserializer);
     return FfiStatus(
         active: var_active,
         nif: var_nif,
         deviceId: var_deviceId,
-        createdAt: var_createdAt,
-        hasFirebaseToken: var_hasFirebaseToken);
+        createdAt: var_createdAt);
   }
 
   @protected
@@ -888,7 +885,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.nif, serializer);
     sse_encode_opt_String(self.deviceId, serializer);
     sse_encode_opt_String(self.createdAt, serializer);
-    sse_encode_bool(self.hasFirebaseToken, serializer);
   }
 
   @protected

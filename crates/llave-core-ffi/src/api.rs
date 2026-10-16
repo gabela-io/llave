@@ -6,15 +6,6 @@ use tracing_subscriber::util::SubscriberInitExt;
 // FFI-safe types (no lifetimes, simple owned data)
 // ---------------------------------------------------------------------------
 
-/// Session information returned after activation.
-#[frb]
-pub struct FfiSession {
-    pub device_id: String,
-    pub nif: String,
-    pub created_at: String,
-    pub has_firebase_token: bool,
-}
-
 /// Status of the current session.
 #[frb]
 pub struct FfiStatus {
@@ -22,7 +13,6 @@ pub struct FfiStatus {
     pub nif: Option<String>,
     pub device_id: Option<String>,
     pub created_at: Option<String>,
-    pub has_firebase_token: bool,
 }
 
 /// Generic API result carrying JSON data.
@@ -40,7 +30,13 @@ pub struct FfiApiResult {
 
 impl FfiApiResult {
     fn success(data: String) -> Self {
-        Self { ok: true, data, error: None, error_code: None, server_message: None }
+        Self {
+            ok: true,
+            data,
+            error: None,
+            error_code: None,
+            server_message: None,
+        }
     }
 
     fn failure(e: &llave_core::LlaveError) -> Self {
@@ -136,17 +132,6 @@ fn to_ffi_result<T: serde::Serialize>(
     })
 }
 
-/// Persist NIF and device ID in config, logging on failure.
-fn save_session_config(nif: &str, device_id: &str) {
-    if let Ok(mut cfg) = llave_core::Config::load() {
-        cfg.nif = Some(nif.to_owned());
-        cfg.device_id = Some(device_id.to_owned());
-        if let Err(e) = cfg.save() {
-            tracing::warn!(err = %e, "failed to save config");
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Bridge functions
 // ---------------------------------------------------------------------------
@@ -178,14 +163,12 @@ pub fn get_status() -> FfiStatus {
             nif: Some(session.nif),
             device_id: Some(session.device_id),
             created_at: Some(session.created_at),
-            has_firebase_token: session.firebase_token.is_some(),
         },
         Err(_) => FfiStatus {
             active: false,
             nif: None,
             device_id: None,
             created_at: None,
-            has_firebase_token: false,
         },
     }
 }
@@ -193,28 +176,14 @@ pub fn get_status() -> FfiStatus {
 /// Check if a NIF is registered in Llave.
 #[frb]
 pub async fn check_nif(nif: Option<String>) -> Result<FfiNifCheckResult, String> {
-    let nif = if let Some(n) = nif {
-        llave_core::config::validate_nif(&n).map_err(|e| e.to_string())?
-    } else {
-        let cfg = llave_core::Config::load().map_err(|e| e.to_string())?;
-        cfg.nif.ok_or("No NIF configured")?
-    };
-
     let client = llave_core::shared_client().map_err(|e| e.to_string())?;
-    // Like the app: the stored device id (empty if not activated).
-    let device_id = llave_core::Session::load()
-        .map(|s| s.device_id)
-        .unwrap_or_default();
-
-    let resp = client
-        .clave_is_nif_activated(&device_id, &nif)
+    let check = llave_core::auth::check_nif(&client, nif.as_deref())
         .await
         .map_err(|e| e.to_string())?;
-
     Ok(FfiNifCheckResult {
-        nif,
-        status: resp.status,
-        response_json: serde_json::to_string(&resp.respuesta).unwrap_or_default(),
+        nif: check.nif,
+        status: check.status,
+        response_json: serde_json::to_string(&check.response).unwrap_or_default(),
     })
 }
 
@@ -385,8 +354,7 @@ pub fn encrypt_session(pin: String) -> Result<String, String> {
 /// Returns an error if the PIN is wrong (AES-GCM auth fails).
 #[frb]
 pub fn decrypt_and_load_session(sealed: String, pin: String) -> Result<bool, String> {
-    let json =
-        llave_core::crypto::open_session(&sealed, &pin).map_err(|e| e.to_string())?;
+    let json = llave_core::crypto::open_session(&sealed, &pin).map_err(|e| e.to_string())?;
     llave_core::Session::set_session_data(&json).map_err(|e| e.to_string())?;
     tracing::debug!("session decrypted and loaded");
     Ok(true)
@@ -402,8 +370,7 @@ pub fn change_session_pin(
     old_pin: String,
     new_pin: String,
 ) -> Result<String, String> {
-    let json =
-        llave_core::crypto::open_session(&sealed, &old_pin).map_err(|e| e.to_string())?;
+    let json = llave_core::crypto::open_session(&sealed, &old_pin).map_err(|e| e.to_string())?;
     llave_core::crypto::seal_session(&json, &new_pin).map_err(|e| e.to_string())
 }
 
@@ -456,10 +423,12 @@ pub async fn dni_authenticate(
         }
         // Like the app, the caller asks for the date of birth and calls again
         // with it as `fecha`, an empty `soporte` and this challenge.
-        Err(e @ llave_core::LlaveError::DniBirthDateRequired { challenge, .. }) => Ok(FfiApiResult {
-            data: serde_json::json!({ "challenge": challenge_name(challenge) }).to_string(),
-            ..FfiApiResult::failure(&e)
-        }),
+        Err(e @ llave_core::LlaveError::DniBirthDateRequired { challenge, .. }) => {
+            Ok(FfiApiResult {
+                data: serde_json::json!({ "challenge": challenge_name(challenge) }).to_string(),
+                ..FfiApiResult::failure(&e)
+            })
+        }
         Err(e) => {
             tracing::warn!(err = %e, "DNI/NIE auth + SMS request failed");
             Ok(FfiApiResult::failure(&e))
@@ -499,7 +468,9 @@ pub async fn dni_complete_activation(
     .await
     {
         Ok(session) => {
-            save_session_config(&nif, &session.device_id);
+            if let Err(e) = llave_core::Config::remember_activation(&nif, &session.device_id) {
+                tracing::warn!(err = %e, "failed to save config");
+            }
             tracing::info!(nif = %session.nif, "DNI/NIE + SMS activation succeeded");
             Ok(FfiApiResult::success(
                 serde_json::to_string(&serde_json::json!({
@@ -515,7 +486,6 @@ pub async fn dni_complete_activation(
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -35,7 +35,6 @@
   "retry": "Retry",
   "refresh": "Refresh",
   "confirm": "Confirm",
-  "reject": "Reject",
   "save": "Save",
   "clear": "Clear",
   "change": "Change",
@@ -52,6 +51,7 @@
   "errorDniData": "The AEAT servers did not accept the document data. Check the NIF and the date or support number.",
   "errorInvalidNif": "The NIF is not valid.",
   "errorUnexpectedResponse": "Unexpected response from the AEAT servers. Try again later.",
+  "errorUnexpected": "Something went wrong. Try again.",
   "invalidResponse": "Invalid response from server",
   "errorWithMessage": "Error: {error}",
   "@errorWithMessage": {
@@ -73,9 +73,6 @@
   "logOut": "Log out",
   "logOutTitle": "Log out?",
   "logOutMessage": "This will clear your session. You can re-activate later.",
-  "noActiveSession": "No active session",
-  "activateToStart": "Activate your device to get started.",
-  "activateDevice": "Activate Device",
   "qrAuthentication": "QR Authentication",
   "emailLabel": "Email",
   "phoneLabel": "Phone",
@@ -91,40 +88,14 @@
   "registrationSuperior": "Superior",
 
   "pendingTitle": "Pending Requests",
-  "pendingEmptyTitle": "No pending requests",
-  "pendingEmptySubtitle": "Authentication requests will appear here\nwhen detected by the server.",
   "requestConfirmed": "Request confirmed",
   "requestRejected": "Request rejected",
-  "failed": "Failed",
-  "providerCode": "Provider code: {code}",
-  "@providerCode": {
-    "placeholders": {
-      "code": { "type": "String" }
-    }
-  },
-  "actionRequestTitle": "{action} request?",
-  "@actionRequestTitle": {
-    "placeholders": {
-      "action": { "type": "String" }
-    }
-  },
-  "actionRequestMessage": "Are you sure you want to {action} this authentication request?",
-  "@actionRequestMessage": {
-    "placeholders": {
-      "action": { "type": "String" }
-    }
-  },
 
   "historyTitle": "History",
   "historyEmptyTitle": "No operations found",
   "accepted": "Accepted",
   "rejected": "Rejected",
 
-  "myDataTitle": "My Data",
-  "noData": "No data",
-  "accountInformation": "Account Information",
-  "nifLabel": "NIF",
-  "registrationLevel": "Registration Level",
 
   "qrAuthTitle": "QR Authentication",
   "useCamera": "Use camera",
@@ -139,8 +110,6 @@
   "invalidPetitionData": "Invalid response: no petition data",
 
   "dniAuthTitle": "DNI/NIE Authentication",
-  "deviceActivated": "Device activated successfully!",
-  "goToHome": "Go to Home",
   "smsVerification": "SMS Verification",
   "smsSentTo": "An SMS verification code has been sent to:",
   "smsCodeLabel": "SMS Code",
@@ -186,7 +155,7 @@
   "about": "About",
   "version": "Version",
   "poweredBy": "Powered by",
-  "poweredByValue": "Rust core (llave-core) via flutter_rust_bridge",
+  "poweredByValue": "Rust core (llave-core) via FFI",
   "developer": "Developer",
   "developerTools": "Developer Tools",
   "mockBridgeActive": "Mock bridge active",
@@ -237,10 +206,6 @@
   "unlockWithBiometrics": "Unlock with biometrics",
   "forgotPin": "Forgot PIN?",
 
-  "activateLlave": "Activate Llave",
-  "registerDevice": "Register this device with your Cl@ve account.",
-  "activateWithDni": "Activate with DNI/NIE",
-  "dniActivateDescription": "You will need the data printed on your physical DNI/NIE card and access to the phone number registered with Cl@ve.",
 
   "setYourPin": "Set Your PIN",
   "setPinDescription": "This PIN will be required every time you open the app. It protects your Llave credentials on this device.",

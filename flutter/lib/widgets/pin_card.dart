@@ -66,7 +66,7 @@ class _PinCardState extends ConsumerState<PinCard> {
       }
       _show(pin, int.tryParse(data['time_to_live_seconds'] as String? ?? ''));
     } catch (e) {
-      if (mounted) setState(() => _message = l10n.errorUnexpectedResponse);
+      if (mounted) setState(() => _message = l10n.errorUnexpected);
     } finally {
       if (mounted) setState(() => _loading = false);
     }

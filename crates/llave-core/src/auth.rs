@@ -88,7 +88,10 @@ pub async fn request_pin(client: &LlaveClient, session: &Session) -> Result<(Str
     );
 
     // Step 1: Establish device session with the server (mirrors app startup call).
-    match client.clave_starting(&session.device_id, &session.nif, "").await {
+    match client
+        .clave_starting(&session.device_id, &session.nif, "")
+        .await
+    {
         Ok(resp) => {
             tracing::info!(
                 status = %resp.status,
@@ -173,7 +176,9 @@ pub async fn authenticate_dni(
     soporte: &str,
     challenge: Option<crate::api::DniChallenge>,
 ) -> Result<()> {
-    client.authenticate_dni_nie(nif, fecha, soporte, challenge).await
+    client
+        .authenticate_dni_nie(nif, fecha, soporte, challenge)
+        .await
 }
 
 /// Result of phase 1: DNI auth + registration check + SMS request.
@@ -238,14 +243,18 @@ pub async fn dni_request_sms(
 
     // Step 1: DNI/NIE auth (establishes session cookies).
     tracing::info!("authenticating via DNI/NIE");
-    client.authenticate_dni_nie(nif, fecha, soporte, challenge).await?;
+    client
+        .authenticate_dni_nie(nif, fecha, soporte, challenge)
+        .await?;
 
     // Step 2: Check registration state (uses session cookies from step 1).
     tracing::info!("checking registration state");
     let mut state_resp = client.clave_request_state().await?;
     if needs_app_movil_retry(&state_resp.status, state_resp.codigo_error.as_deref()) {
         // The app re-requests the `appmovil` cookie and retries once.
-        tracing::info!("ClaveRequestStateSv returned 987 — refreshing appmovil cookie and retrying");
+        tracing::info!(
+            "ClaveRequestStateSv returned 987 — refreshing appmovil cookie and retrying"
+        );
         if let Err(e) = client.set_cookie_app_movil().await {
             tracing::warn!(err = %e, "SetCookieAppMovil failed before retry");
         }
@@ -254,11 +263,13 @@ pub async fn dni_request_sms(
     if state_resp.status != "OK" {
         return Err(state_resp.ko_error("Registration state check failed"));
     }
-    let state = state_resp.respuesta.ok_or_else(|| crate::error::LlaveError::Api {
-        status: "OK".into(),
-        code: String::new(),
-        message: "Empty ClaveRequestState response".into(),
-    })?;
+    let state = state_resp
+        .respuesta
+        .ok_or_else(|| crate::error::LlaveError::Api {
+            status: "OK".into(),
+            code: String::new(),
+            message: "Empty ClaveRequestState response".into(),
+        })?;
     tracing::info!(
         registrado = state.registrado.as_deref().unwrap_or("?"),
         telefono = state.telefono.as_deref().unwrap_or("?"),
@@ -273,11 +284,13 @@ pub async fn dni_request_sms(
     if sms_resp.status != "OK" {
         return Err(sms_resp.ko_error("SMS request failed"));
     }
-    let sms = sms_resp.respuesta.ok_or_else(|| crate::error::LlaveError::Api {
-        status: "OK".into(),
-        code: String::new(),
-        message: "Empty ObtenerClaveMovilSMS response".into(),
-    })?;
+    let sms = sms_resp
+        .respuesta
+        .ok_or_else(|| crate::error::LlaveError::Api {
+            status: "OK".into(),
+            code: String::new(),
+            message: "Empty ObtenerClaveMovilSMS response".into(),
+        })?;
     tracing::info!(
         movil = %sms.movil,
         hora = %sms.hora_peticion,
@@ -331,11 +344,13 @@ pub async fn dni_validate_and_activate(
         return Err(activate_resp.ko_error("Device activation failed"));
     }
 
-    let activate_data = activate_resp.respuesta.ok_or_else(|| crate::error::LlaveError::Api {
-        status: "OK".into(),
-        code: String::new(),
-        message: "Empty activation response".into(),
-    })?;
+    let activate_data = activate_resp
+        .respuesta
+        .ok_or_else(|| crate::error::LlaveError::Api {
+            status: "OK".into(),
+            code: String::new(),
+            message: "Empty activation response".into(),
+        })?;
 
     let session = session_from_activation(activate_data, nif, device_password)?;
     session.save()?;
@@ -366,7 +381,10 @@ pub async fn poll_pending_requests(
     // Propagate as a proper error so callers can distinguish "no data" from
     // "got data with null fields".
     if operations.status != "OK" {
-        check_device_active(operations.codigo_error.as_deref(), operations.mensaje.as_deref())?;
+        check_device_active(
+            operations.codigo_error.as_deref(),
+            operations.mensaje.as_deref(),
+        )?;
         return Err(operations.ko_error("No pending operations"));
     }
 
@@ -457,7 +475,10 @@ pub async fn confirm_authentication(
         tracing::info!("no WWW12 cookie — skipping ValidarClaveMovil");
     }
 
-    let pending = resp.respuesta.as_ref().and_then(|r| r.pending_requests.as_deref());
+    let pending = resp
+        .respuesta
+        .as_ref()
+        .and_then(|r| r.pending_requests.as_deref());
     Ok(serde_json::json!({
         "status": resp.status,
         "pending_requests": pending,
@@ -582,14 +603,12 @@ pub async fn listen_for_requests(
     while attempt_allowed(attempt, max_attempts) {
         tracing::debug!(attempt = attempt, max = max_attempts, "polling");
 
+        // Same rule as `next_pending_request`, keeping the full poll result.
         match poll_pending_requests(client, session).await {
-            Ok(result) => {
-                if result.get("data").is_some_and(has_pending_request) {
-                    return Ok(result);
-                }
-            }
-            Err(crate::LlaveError::Api { ref code, .. }) if is_no_pending_code(code) || is_retry_later_code(code) => {
-                tracing::debug!(code = %code, "no pending operations, continuing poll");
+            Ok(result) if result.get("data").is_some_and(has_pending_request) => return Ok(result),
+            Ok(_) => {}
+            Err(e) if keep_polling(&e) => {
+                tracing::debug!(err = %e, "no pending operations, continuing poll");
             }
             Err(e) => return Err(e),
         }
@@ -626,6 +645,35 @@ impl HistoryResult {
             Self::Rejected => "10",
         }
     }
+}
+
+/// Result of [`check_nif`].
+pub struct NifCheck {
+    pub nif: String,
+    /// `OK` when the NIF is activated in Cl@ve, `KO` otherwise.
+    pub status: String,
+    pub response: Option<crate::api::StartingResponse>,
+}
+
+/// Whether a NIF is activated (`ClaveIsNifActivatedSv`): `nif`, or the
+/// configured one. Like the app, it sends the stored device id (empty
+/// when this device is not activated).
+pub async fn check_nif(client: &LlaveClient, nif: Option<&str>) -> Result<NifCheck> {
+    let nif = match nif {
+        Some(n) => crate::config::validate_nif(n)?,
+        None => crate::Config::load()?.nif.ok_or_else(|| {
+            crate::LlaveError::Config(
+                "No NIF configured. Pass a NIF or activate this device first.".into(),
+            )
+        })?,
+    };
+    let device_id = Session::load().map(|s| s.device_id).unwrap_or_default();
+    let resp = client.clave_is_nif_activated(&device_id, &nif).await?;
+    Ok(NifCheck {
+        nif,
+        status: resp.status,
+        response: resp.respuesta,
+    })
 }
 
 /// The app shows the last week by default.
@@ -672,7 +720,10 @@ pub async fn my_data(
         .clave_is_nif_activated(&session.device_id, &session.nif)
         .await?;
     if activated.status != "OK" {
-        check_device_active(activated.codigo_error.as_deref(), activated.mensaje.as_deref())?;
+        check_device_active(
+            activated.codigo_error.as_deref(),
+            activated.mensaje.as_deref(),
+        )?;
         activated.into_result()?;
     }
     let resp = client
@@ -718,7 +769,10 @@ fn check_device_active(code: Option<&str>, message: Option<&str>) -> Result<()> 
         return Ok(());
     };
     if wipe {
-        tracing::warn!(code = code.unwrap_or_default(), "device revoked by server — deleting local session");
+        tracing::warn!(
+            code = code.unwrap_or_default(),
+            "device revoked by server — deleting local session"
+        );
         if let Err(e) = Session::delete() {
             tracing::warn!(err = %e, "could not delete local session");
         }
@@ -772,7 +826,6 @@ fn session_from_activation(
         device_id,
         nif,
         device_password: Zeroizing::new(device_password.to_string()),
-        firebase_token: None,
         created_at: chrono::Utc::now().to_rfc3339(),
         poll_cursor: None,
     })
@@ -885,7 +938,12 @@ mod tests {
     #[test]
     fn history_result_codes_match_app() {
         assert_eq!(
-            [HistoryResult::All, HistoryResult::Confirmed, HistoryResult::Rejected].map(HistoryResult::code),
+            [
+                HistoryResult::All,
+                HistoryResult::Confirmed,
+                HistoryResult::Rejected
+            ]
+            .map(HistoryResult::code),
             ["00", "01", "10"]
         );
     }
@@ -960,12 +1018,18 @@ mod tests {
     // -- keep_polling --
 
     fn api_error(code: &str) -> crate::LlaveError {
-        crate::LlaveError::Api { status: "KO".into(), code: code.into(), message: String::new() }
+        crate::LlaveError::Api {
+            status: "KO".into(),
+            code: code.into(),
+            message: String::new(),
+        }
     }
 
     #[test]
     fn keep_polling_on_no_request_codes() {
-        assert!(["40", "205", "407"].iter().all(|c| keep_polling(&api_error(c))));
+        assert!(["40", "205", "407"]
+            .iter()
+            .all(|c| keep_polling(&api_error(c))));
     }
 
     #[test]
@@ -975,7 +1039,10 @@ mod tests {
 
     #[test]
     fn stop_polling_on_device_not_active() {
-        let err = crate::LlaveError::DeviceNotActive { code: "109".into(), message: String::new() };
+        let err = crate::LlaveError::DeviceNotActive {
+            code: "109".into(),
+            message: String::new(),
+        };
         assert!(!keep_polling(&err));
     }
 
@@ -991,7 +1058,10 @@ mod tests {
     /// "0" + Base64 of `n` bytes, like the codes the AEAT site shows.
     fn qr_with_payload(n: usize) -> String {
         use base64::Engine;
-        format!("0{}", base64::engine::general_purpose::STANDARD.encode(vec![7u8; n]))
+        format!(
+            "0{}",
+            base64::engine::general_purpose::STANDARD.encode(vec![7u8; n])
+        )
     }
 
     #[test]
@@ -1115,19 +1185,22 @@ mod tests {
 
     #[test]
     fn activation_session_falls_back_to_input_nif() {
-        let session = session_from_activation(activation(Some("dev-1")), "12345678Z", "PWD").unwrap();
+        let session =
+            session_from_activation(activation(Some("dev-1")), "12345678Z", "PWD").unwrap();
         assert_eq!(session.nif, "12345678Z");
     }
 
     #[test]
     fn activation_session_uses_server_device_id() {
-        let session = session_from_activation(activation(Some("dev-1")), "12345678Z", "PWD").unwrap();
+        let session =
+            session_from_activation(activation(Some("dev-1")), "12345678Z", "PWD").unwrap();
         assert_eq!(session.device_id, "dev-1");
     }
 
     #[test]
     fn activation_session_stores_local_password() {
-        let session = session_from_activation(activation(Some("dev-1")), "12345678Z", "PWD").unwrap();
+        let session =
+            session_from_activation(activation(Some("dev-1")), "12345678Z", "PWD").unwrap();
         assert_eq!(session.device_password.as_str(), "PWD");
     }
 

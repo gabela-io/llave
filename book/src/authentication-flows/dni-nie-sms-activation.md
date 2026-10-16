@@ -323,7 +323,6 @@ After activation, llave (`auth::session_from_activation`):
   "device_id": "OyXoskiz6fLnzd080Xxzrpr40",
   "nif": "09030055W",
   "device_password": "3F9A…(128 uppercase hex chars)…C01E",
-  "firebase_token": null,
   "created_at": "2026-03-10T14:11:16.999Z",
   "poll_cursor": null
 }

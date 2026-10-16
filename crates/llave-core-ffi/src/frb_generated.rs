@@ -849,13 +849,11 @@ impl SseDecode for crate::api::FfiStatus {
         let mut var_nif = <Option<String>>::sse_decode(deserializer);
         let mut var_deviceId = <Option<String>>::sse_decode(deserializer);
         let mut var_createdAt = <Option<String>>::sse_decode(deserializer);
-        let mut var_hasFirebaseToken = <bool>::sse_decode(deserializer);
         return crate::api::FfiStatus {
             active: var_active,
             nif: var_nif,
             device_id: var_deviceId,
             created_at: var_createdAt,
-            has_firebase_token: var_hasFirebaseToken,
         };
     }
 }
@@ -996,7 +994,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::FfiStatus {
             self.nif.into_into_dart().into_dart(),
             self.device_id.into_into_dart().into_dart(),
             self.created_at.into_into_dart().into_dart(),
-            self.has_firebase_token.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1049,7 +1046,6 @@ impl SseEncode for crate::api::FfiStatus {
         <Option<String>>::sse_encode(self.nif, serializer);
         <Option<String>>::sse_encode(self.device_id, serializer);
         <Option<String>>::sse_encode(self.created_at, serializer);
-        <bool>::sse_encode(self.has_firebase_token, serializer);
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::error::{LlaveError, Result};
 use base64::Engine;
-use sha2::{Sha512, Digest};
+use sha2::{Digest, Sha512};
 use zeroize::Zeroizing;
 
 // ---------------------------------------------------------------------------
@@ -112,9 +112,7 @@ pub fn generate_device_password() -> String {
             .collect(),
     );
     let hash = Sha512::digest(random_string.as_bytes());
-    hash.iter()
-        .map(|b| format!("{:02X}", b))
-        .collect()
+    hash.iter().map(|b| format!("{:02X}", b)).collect()
 }
 
 #[cfg(test)]
@@ -198,7 +196,9 @@ mod tests {
     fn generate_device_password_format() {
         let pw = generate_device_password();
         assert_eq!(pw.len(), 128);
-        assert!(pw.chars().all(|c| c.is_ascii_hexdigit() && (c.is_ascii_digit() || c.is_ascii_uppercase())));
+        assert!(pw
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && (c.is_ascii_digit() || c.is_ascii_uppercase())));
     }
 
     #[test]

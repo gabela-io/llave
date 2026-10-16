@@ -11,7 +11,6 @@ graph TD
         S --> D["device_id: server-assigned id"]
         S --> N["nif: NIF returned by the activation response"]
         S --> P["device_password: SHA-512 uppercase hex (128 chars), client-generated"]
-        S --> F["firebase_token: optional (llave: null)"]
         S --> C["created_at: RFC 3339 timestamp"]
         S --> T["poll_cursor: last peticion.timestamp (optional)"]
     end
@@ -34,7 +33,7 @@ graph TD
 | `device_id` | From `ClaveActivateAuthenticationSv`. Activation fails if it is missing or empty |
 | `nif` | The server's `respuesta.nif`, like the app's `saveNifUsuario`. Falls back to the typed NIF only if the response has none |
 | `device_password` | Generated locally before activation ([Device Password](../cryptography/device-password.md)). Zeroized in memory and redacted in `Debug` |
-| `firebase_token` | Always `null` today; llave registers no push token |
+| *(none)* | Older versions also stored `firebase_token` (always `null`); llave registers no push token and ignores the field when loading |
 | `created_at` | Set at activation |
 | `poll_cursor` | `ClaveRequestAllOperationsSv` cursor (see [Polling](../authentication-flows/pending-operations-polling.md#timestamp-cursor)). `#[serde(default)]`, so sessions saved without it still load |
 

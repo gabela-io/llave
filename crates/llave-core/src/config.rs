@@ -1,7 +1,7 @@
 use crate::error::{LlaveError, Result};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use parking_lot::Mutex;
 
 /// Global proxy URL. Set via [`set_proxy`] before creating any [`LlaveClient`].
 /// Checked by `LlaveClient::new()` — if set, all requests go through this proxy.
@@ -64,6 +64,16 @@ impl Config {
         std::fs::write(path, data)?;
         Ok(())
     }
+
+    /// Remember the NIF and device id of a new activation (used as the
+    /// default NIF by later commands). Failing here does not undo the
+    /// activation, so callers only log the error.
+    pub fn remember_activation(nif: &str, device_id: &str) -> Result<()> {
+        let mut cfg = Self::load()?;
+        cfg.nif = Some(nif.to_owned());
+        cfg.device_id = Some(device_id.to_owned());
+        cfg.save()
+    }
 }
 
 /// Validate Spanish NIF/NIE format and check digit.
@@ -107,16 +117,22 @@ pub fn validate_nif(nif: &str) -> Result<String> {
     }
 
     let number: u32 = match bytes[0] {
-        b'0'..=b'9' => nif[..8].parse().map_err(|_| LlaveError::InvalidNif(nif.clone()))?,
-        b'X' | b'K' | b'L' | b'M' => {
-            numeric_part.parse().map_err(|_| LlaveError::InvalidNif(nif.clone()))?
-        }
+        b'0'..=b'9' => nif[..8]
+            .parse()
+            .map_err(|_| LlaveError::InvalidNif(nif.clone()))?,
+        b'X' | b'K' | b'L' | b'M' => numeric_part
+            .parse()
+            .map_err(|_| LlaveError::InvalidNif(nif.clone()))?,
         b'Y' => {
-            let n: u32 = numeric_part.parse().map_err(|_| LlaveError::InvalidNif(nif.clone()))?;
+            let n: u32 = numeric_part
+                .parse()
+                .map_err(|_| LlaveError::InvalidNif(nif.clone()))?;
             10_000_000 + n
         }
         b'Z' => {
-            let n: u32 = numeric_part.parse().map_err(|_| LlaveError::InvalidNif(nif.clone()))?;
+            let n: u32 = numeric_part
+                .parse()
+                .map_err(|_| LlaveError::InvalidNif(nif.clone()))?;
             20_000_000 + n
         }
         _ => return Err(LlaveError::InvalidNif(nif)),

@@ -62,8 +62,7 @@ class _DevScreenState extends ConsumerState<DevScreen> {
             subtitle: session != null
                 ? Text('NIF: ${session.nif}\n'
                     'Device: ${session.deviceId}\n'
-                    'Created: ${session.createdAt}\n'
-                    'Firebase: ${session.hasFirebaseToken}')
+                    'Created: ${session.createdAt}')
                 : null,
             isThreeLine: session != null,
           ),
@@ -94,8 +93,7 @@ class _DevScreenState extends ConsumerState<DevScreen> {
               return 'Active: ${s.active}\n'
                   'NIF: ${s.nif}\n'
                   'Device: ${s.deviceId}\n'
-                  'Created: ${s.createdAt}\n'
-                  'Firebase: ${s.hasFirebaseToken}';
+                  'Created: ${s.createdAt}';
             }),
           ),
           _ActionTile(

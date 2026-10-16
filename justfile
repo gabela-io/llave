@@ -36,8 +36,8 @@ build-release:
 check:
     cargo check
 
-# Run clippy on the workspace
-lint:
+# Check formatting and run clippy on the workspace
+lint: fmt-check
     cargo clippy -- -D warnings
 
 # Format code

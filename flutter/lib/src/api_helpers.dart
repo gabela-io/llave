@@ -62,7 +62,7 @@ Future<void> handleApiCall({
   } catch (e) {
     final err = e.toString();
     debugPrint('API call failed: $err');
-    setError(l10n?.errorUnexpectedResponse ?? err);
+    setError(l10n?.errorUnexpected ?? err);
     if (context.mounted && isIpRateLimited(err)) {
       showIpRateLimitBanner(context);
     }

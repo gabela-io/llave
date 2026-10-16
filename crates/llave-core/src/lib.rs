@@ -6,10 +6,10 @@ pub mod error;
 pub mod session;
 pub mod storage;
 
-pub use api::{LlaveClient, shared_client, reset_shared_client};
-pub use config::{Config, set_proxy, get_proxy};
+pub use api::{reset_shared_client, shared_client, LlaveClient};
+pub use config::{get_proxy, set_proxy, Config};
 pub use error::LlaveError;
 pub use session::Session;
-pub use storage::{init_storage, MemoryStorage, PinPrompt, PinRequest, SealedFileStorage};
 #[cfg(not(target_os = "android"))]
 pub use storage::KeyringStorage;
+pub use storage::{init_storage, MemoryStorage, PinPrompt, PinRequest, SealedFileStorage};

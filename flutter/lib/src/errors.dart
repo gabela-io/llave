@@ -19,8 +19,8 @@ String friendlyError(AppLocalizations l10n, LlaveApiResult result) {
     'no_pending_pin' => l10n.pinNoPending,
     'dni_auth_failed' => l10n.errorDniData,
     'invalid_nif' => l10n.errorInvalidNif,
-    'html_response' || 'json' || 'too_many_redirects' || 'exception' =>
-      l10n.errorUnexpectedResponse,
+    'html_response' || 'json' || 'too_many_redirects' => l10n.errorUnexpectedResponse,
+    'exception' => l10n.errorUnexpected,
     'api' => result.serverMessage ?? l10n.errorUnexpectedResponse,
     // The IP block keeps its English text: `isIpRateLimited` matches it.
     'ip_rate_limited' => result.error ?? fallback,

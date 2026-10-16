@@ -85,9 +85,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get confirm => 'Confirm';
 
   @override
-  String get reject => 'Reject';
-
-  @override
   String get save => 'Save';
 
   @override
@@ -145,6 +142,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Unexpected response from the AEAT servers. Try again later.';
 
   @override
+  String get errorUnexpected => 'Something went wrong. Try again.';
+
+  @override
   String get invalidResponse => 'Invalid response from server';
 
   @override
@@ -190,15 +190,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'This will clear your session. You can re-activate later.';
 
   @override
-  String get noActiveSession => 'No active session';
-
-  @override
-  String get activateToStart => 'Activate your device to get started.';
-
-  @override
-  String get activateDevice => 'Activate Device';
-
-  @override
   String get qrAuthentication => 'QR Authentication';
 
   @override
@@ -228,35 +219,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pendingTitle => 'Pending Requests';
 
   @override
-  String get pendingEmptyTitle => 'No pending requests';
-
-  @override
-  String get pendingEmptySubtitle =>
-      'Authentication requests will appear here\nwhen detected by the server.';
-
-  @override
   String get requestConfirmed => 'Request confirmed';
 
   @override
   String get requestRejected => 'Request rejected';
-
-  @override
-  String get failed => 'Failed';
-
-  @override
-  String providerCode(String code) {
-    return 'Provider code: $code';
-  }
-
-  @override
-  String actionRequestTitle(String action) {
-    return '$action request?';
-  }
-
-  @override
-  String actionRequestMessage(String action) {
-    return 'Are you sure you want to $action this authentication request?';
-  }
 
   @override
   String get historyTitle => 'History';
@@ -269,21 +235,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get rejected => 'Rejected';
-
-  @override
-  String get myDataTitle => 'My Data';
-
-  @override
-  String get noData => 'No data';
-
-  @override
-  String get accountInformation => 'Account Information';
-
-  @override
-  String get nifLabel => 'NIF';
-
-  @override
-  String get registrationLevel => 'Registration Level';
 
   @override
   String get qrAuthTitle => 'QR Authentication';
@@ -321,12 +272,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dniAuthTitle => 'DNI/NIE Authentication';
-
-  @override
-  String get deviceActivated => 'Device activated successfully!';
-
-  @override
-  String get goToHome => 'Go to Home';
 
   @override
   String get smsVerification => 'SMS Verification';
@@ -465,7 +410,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get poweredBy => 'Powered by';
 
   @override
-  String get poweredByValue => 'Rust core (llave-core) via flutter_rust_bridge';
+  String get poweredByValue => 'Rust core (llave-core) via FFI';
 
   @override
   String get developer => 'Developer';
@@ -583,19 +528,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get forgotPin => 'Forgot PIN?';
-
-  @override
-  String get activateLlave => 'Activate Llave';
-
-  @override
-  String get registerDevice => 'Register this device with your Cl@ve account.';
-
-  @override
-  String get activateWithDni => 'Activate with DNI/NIE';
-
-  @override
-  String get dniActivateDescription =>
-      'You will need the data printed on your physical DNI/NIE card and access to the phone number registered with Cl@ve.';
 
   @override
   String get setYourPin => 'Set Your PIN';

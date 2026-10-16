@@ -1,7 +1,7 @@
 use crate::error::{LlaveError, Result};
+use parking_lot::Mutex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use parking_lot::Mutex;
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
@@ -73,7 +73,10 @@ fn classify_dni_body(body: &str) -> Option<Result<()>> {
     if resp.status != "KO" {
         return Some(Ok(()));
     }
-    let challenge = resp.codigo_error.as_deref().and_then(DniChallenge::from_code);
+    let challenge = resp
+        .codigo_error
+        .as_deref()
+        .and_then(DniChallenge::from_code);
     Some(Err(match challenge {
         Some(challenge) => LlaveError::DniBirthDateRequired {
             challenge,
@@ -171,12 +174,11 @@ pub struct ApiResponse<T> {
 impl<T> ApiResponse<T> {
     pub fn into_result(self) -> Result<T> {
         if self.status == "OK" {
-            self.respuesta
-                .ok_or_else(|| LlaveError::Api {
-                    status: self.status,
-                    code: self.codigo_error.unwrap_or_default(),
-                    message: "Empty response payload".into(),
-                })
+            self.respuesta.ok_or_else(|| LlaveError::Api {
+                status: self.status,
+                code: self.codigo_error.unwrap_or_default(),
+                message: "Empty response payload".into(),
+            })
         } else {
             Err(self.ko_error("Unknown error"))
         }
@@ -326,7 +328,7 @@ impl LlaveClient {
             tracing::info!(proxy = %proxy_url, "using proxy");
             builder = builder.proxy(
                 reqwest::Proxy::all(&proxy_url)
-                    .map_err(|e| LlaveError::Config(format!("invalid proxy URL: {e}")))?
+                    .map_err(|e| LlaveError::Config(format!("invalid proxy URL: {e}")))?,
             );
         }
 
@@ -336,9 +338,7 @@ impl LlaveClient {
             client,
             // Pre-seed with sgat-language cookie, matching the Android app's
             // CookiesManagerSingleton which always sets this at startup.
-            cookies: Mutex::new(vec![
-                ("sgat-language".into(), "es_ES".into()),
-            ]),
+            cookies: Mutex::new(vec![("sgat-language".into(), "es_ES".into())]),
         })
     }
 
@@ -472,7 +472,8 @@ impl LlaveClient {
         url: &str,
         form: &[(&str, &str)],
     ) -> Result<ApiResponse<T>> {
-        self.execute(endpoint, self.client.post(url).form(form)).await
+        self.execute(endpoint, self.client.post(url).form(form))
+            .await
     }
 
     /// POST with a JSON body (matching Retrofit `@POST` + `@Body`).
@@ -486,7 +487,10 @@ impl LlaveClient {
         let req = self
             .client
             .post(url)
-            .header(reqwest::header::CONTENT_TYPE, "application/json; charset=UTF-8")
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/json; charset=UTF-8",
+            )
             .json(body);
         self.execute(endpoint, req).await
     }
@@ -522,7 +526,9 @@ impl LlaveClient {
         tracing::debug!(endpoint = endpoint, http_status = %resp.status(), "aeat response");
         self.capture_cookies(&resp);
 
-        let (resp, _) = self.follow_redirects(endpoint, &cookie_header, resp).await?;
+        let (resp, _) = self
+            .follow_redirects(endpoint, &cookie_header, resp)
+            .await?;
 
         let final_status = resp.status();
         let final_url = resp.url().to_string();
@@ -563,7 +569,10 @@ impl LlaveClient {
         token_push: &str,
     ) -> Result<ApiResponse<StartingResponse>> {
         let url = format!("{BASE_URL}/wlpl/MOVI-P24H/ClaveStartingSv");
-        self.post_form("clave_starting", &url, &[
+        self.post_form(
+            "clave_starting",
+            &url,
+            &[
                 ("device_id", device_id),
                 ("NIF", nif),
                 ("sistema_operativo", OS_NAME),
@@ -571,7 +580,9 @@ impl LlaveClient {
                 ("version_os", OS_VERSION),
                 ("version_app", APP_VERSION),
                 ("modelo", DEVICE_MODEL),
-            ]).await
+            ],
+        )
+        .await
     }
 
     /// Ask the server to set the `appmovil` cookie (www2, JSON body).
@@ -598,13 +609,18 @@ impl LlaveClient {
         nif: &str,
     ) -> Result<ApiResponse<StartingResponse>> {
         let url = format!("{BASE_URL}/wlpl/MOVI-P24H/ClaveIsNifActivatedSv");
-        self.post_form("clave_is_nif_activated", &url, &[
-            ("device_id", device_id),
-            ("NIF", nif),
-            ("sistema_operativo", OS_NAME),
-            ("version_os", OS_VERSION),
-            ("version_app", APP_VERSION),
-        ]).await
+        self.post_form(
+            "clave_is_nif_activated",
+            &url,
+            &[
+                ("device_id", device_id),
+                ("NIF", nif),
+                ("sistema_operativo", OS_NAME),
+                ("version_os", OS_VERSION),
+                ("version_app", APP_VERSION),
+            ],
+        )
+        .await
     }
 
     /// Get account data via Clave endpoint (what the Android app actually uses).
@@ -616,13 +632,18 @@ impl LlaveClient {
         nif: &str,
     ) -> Result<ApiResponse<ClaveCheckMyDataResponse>> {
         let url = format!("{BASE_URL}/wlpl/MOVI-P24H/ClaveCheckMyDataSv");
-        self.post_form("clave_check_my_data", &url, &[
-            ("device_id", device_id),
-            ("NIF", nif),
-            ("sistema_operativo", OS_NAME),
-            ("version_os", OS_VERSION),
-            ("version_app", APP_VERSION),
-        ]).await
+        self.post_form(
+            "clave_check_my_data",
+            &url,
+            &[
+                ("device_id", device_id),
+                ("NIF", nif),
+                ("sistema_operativo", OS_NAME),
+                ("version_os", OS_VERSION),
+                ("version_app", APP_VERSION),
+            ],
+        )
+        .await
     }
 
     /// Reveal the pending Cl@ve PIN (`ClaveRequestPinSv`).
@@ -633,14 +654,19 @@ impl LlaveClient {
         nif: &str,
     ) -> Result<ApiResponse<RequestPinResponse>> {
         let url = format!("{BASE_URL}/wlpl/MOVI-P24H/ClaveRequestPinSv");
-        self.post_form("request_pin", &url, &[
-            ("device_id", device_id),
-            ("user_password", device_password),
-            ("NIF", nif),
-            ("sistema_operativo", OS_NAME),
-            ("version_os", OS_VERSION),
-            ("version_app", APP_VERSION),
-        ]).await
+        self.post_form(
+            "request_pin",
+            &url,
+            &[
+                ("device_id", device_id),
+                ("user_password", device_password),
+                ("NIF", nif),
+                ("sistema_operativo", OS_NAME),
+                ("version_os", OS_VERSION),
+                ("version_app", APP_VERSION),
+            ],
+        )
+        .await
     }
 
     /// Confirm a Cl@ve Móvil authentication request (`ClaveAuthenticateSv`).
@@ -653,16 +679,21 @@ impl LlaveClient {
         codigo_idp: &str,
     ) -> Result<ApiResponse<AuthenticateResponse>> {
         let url = format!("{BASE_URL}/wlpl/MOVI-P24H/ClaveAuthenticateSv");
-        self.post_form("authenticate", &url, &[
-            ("device_id", device_id),
-            ("user_password", device_password),
-            ("NIF", nif),
-            ("sistema_operativo", OS_NAME),
-            ("version_os", OS_VERSION),
-            ("version_app", APP_VERSION),
-            ("tokenClaveMovil", token_clave_movil),
-            ("codigoIdP", codigo_idp),
-        ]).await
+        self.post_form(
+            "authenticate",
+            &url,
+            &[
+                ("device_id", device_id),
+                ("user_password", device_password),
+                ("NIF", nif),
+                ("sistema_operativo", OS_NAME),
+                ("version_os", OS_VERSION),
+                ("version_app", APP_VERSION),
+                ("tokenClaveMovil", token_clave_movil),
+                ("codigoIdP", codigo_idp),
+            ],
+        )
+        .await
     }
 
     /// Reject a pending Cl@ve Móvil authentication request (`ClaveCancelAuthenticateSv`).
@@ -674,15 +705,20 @@ impl LlaveClient {
         codigo_idp: &str,
     ) -> Result<ApiResponse<serde_json::Value>> {
         let url = format!("{BASE_URL}/wlpl/MOVI-P24H/ClaveCancelAuthenticateSv");
-        self.post_form("cancel_authenticate", &url, &[
-            ("device_id", device_id),
-            ("NIF", nif),
-            ("sistema_operativo", OS_NAME),
-            ("version_os", OS_VERSION),
-            ("version_app", APP_VERSION),
-            ("tokenClaveMovil", token_clave_movil),
-            ("codigoIdP", codigo_idp),
-        ]).await
+        self.post_form(
+            "cancel_authenticate",
+            &url,
+            &[
+                ("device_id", device_id),
+                ("NIF", nif),
+                ("sistema_operativo", OS_NAME),
+                ("version_os", OS_VERSION),
+                ("version_app", APP_VERSION),
+                ("tokenClaveMovil", token_clave_movil),
+                ("codigoIdP", codigo_idp),
+            ],
+        )
+        .await
     }
 
     /// Activate device authentication.
@@ -695,14 +731,19 @@ impl LlaveClient {
         token_push: &str,
     ) -> Result<ApiResponse<ActivateResponse>> {
         let url = format!("{BASE_URL_WWW6}/wlpl/MOVI-P24H/ClaveActivateAuthenticationSv");
-        self.post_form("activate_authentication", &url, &[
-            ("sistema_operativo", OS_NAME),
-            ("version_os", OS_VERSION),
-            ("version_app", APP_VERSION),
-            ("token_push", token_push),
-            ("user_password", device_password),
-            ("modelo", DEVICE_MODEL),
-        ]).await
+        self.post_form(
+            "activate_authentication",
+            &url,
+            &[
+                ("sistema_operativo", OS_NAME),
+                ("version_os", OS_VERSION),
+                ("version_app", APP_VERSION),
+                ("token_push", token_push),
+                ("user_password", device_password),
+                ("modelo", DEVICE_MODEL),
+            ],
+        )
+        .await
     }
 
     /// Deactivate this device (`ClaveDesactivateAuthSv`).
@@ -712,13 +753,18 @@ impl LlaveClient {
         nif: &str,
     ) -> Result<ApiResponse<serde_json::Value>> {
         let url = format!("{BASE_URL}/wlpl/MOVI-P24H/ClaveDesactivateAuthSv");
-        self.post_form("deactivate_authentication", &url, &[
-            ("device_id", device_id),
-            ("NIF", nif),
-            ("sistema_operativo", OS_NAME),
-            ("version_os", OS_VERSION),
-            ("version_app", APP_VERSION),
-        ]).await
+        self.post_form(
+            "deactivate_authentication",
+            &url,
+            &[
+                ("device_id", device_id),
+                ("NIF", nif),
+                ("sistema_operativo", OS_NAME),
+                ("version_os", OS_VERSION),
+                ("version_app", APP_VERSION),
+            ],
+        )
+        .await
     }
 
     /// Authenticate with DNI/NIE + date of birth (weak auth).
@@ -747,18 +793,16 @@ impl LlaveClient {
         // The main client already has redirect(Policy::none()), so we
         // can use it directly and follow redirects manually.
         let cookie_header = self.cookie_header();
-        let mut req = self.client
-            .post(&url)
-            .form(&[
-                ("NIF", nif),
-                ("FECHA", fecha),
-                ("SOPORTE", soporte),
-                ("botonAutenticacionDebil", "Continuar"),
-                ("APP", "S"),
-                ("modo", "json"),
-                ("AZUL", azul),
-                ("FECHANIE", fecha_nie),
-            ]);
+        let mut req = self.client.post(&url).form(&[
+            ("NIF", nif),
+            ("FECHA", fecha),
+            ("SOPORTE", soporte),
+            ("botonAutenticacionDebil", "Continuar"),
+            ("APP", "S"),
+            ("modo", "json"),
+            ("AZUL", azul),
+            ("FECHANIE", fecha_nie),
+        ]);
         if !cookie_header.is_empty() {
             req = req.header(reqwest::header::COOKIE, &cookie_header);
         }
@@ -771,7 +815,9 @@ impl LlaveClient {
         );
         self.capture_cookies(&resp);
 
-        let (resp, redirect_count) = self.follow_redirects("authenticate_dni_nie", &cookie_header, resp).await?;
+        let (resp, redirect_count) = self
+            .follow_redirects("authenticate_dni_nie", &cookie_header, resp)
+            .await?;
         let final_status = resp.status();
         let body = resp.text().await?;
 
@@ -814,11 +860,16 @@ impl LlaveClient {
     /// the session cookie established by `authenticate_dni_nie`.
     pub async fn clave_request_state(&self) -> Result<ApiResponse<ClaveRequestStateResponse>> {
         let url = format!("{BASE_URL_WWW12}/wlpl/MOVI-P24H/ClaveRequestStateSv");
-        self.post_form("clave_request_state", &url, &[
-            ("sistema_operativo", OS_NAME),
-            ("version_os", OS_VERSION),
-            ("version_app", APP_VERSION),
-        ]).await
+        self.post_form(
+            "clave_request_state",
+            &url,
+            &[
+                ("sistema_operativo", OS_NAME),
+                ("version_os", OS_VERSION),
+                ("version_app", APP_VERSION),
+            ],
+        )
+        .await
     }
 
     /// Get pending operations for polling.
@@ -829,14 +880,19 @@ impl LlaveClient {
         timestamp: &str,
     ) -> Result<ApiResponse<serde_json::Value>> {
         let url = format!("{BASE_URL}/wlpl/MOVI-P24H/ClaveRequestAllOperationsSv");
-        self.post_form("request_all_operations", &url, &[
-            ("device_id", device_id),
-            ("NIF", nif),
-            ("timestamp", timestamp),
-            ("sistema_operativo", OS_NAME),
-            ("version_os", OS_VERSION),
-            ("version_app", APP_VERSION),
-        ]).await
+        self.post_form(
+            "request_all_operations",
+            &url,
+            &[
+                ("device_id", device_id),
+                ("NIF", nif),
+                ("timestamp", timestamp),
+                ("sistema_operativo", OS_NAME),
+                ("version_os", OS_VERSION),
+                ("version_app", APP_VERSION),
+            ],
+        )
+        .await
     }
 
     /// Query operations history.
@@ -862,21 +918,26 @@ impl LlaveClient {
         let url = format!("{BASE_URL}/wlpl/MOVI-P24H/ClaveOperationsHistorySv");
         // `aut_fir`, `orden` and `tipo` are what the app sends (sorting is
         // done on the device; `tipo` "111" = SMS, QR and DNI requests).
-        self.post_form("operations_history", &url, &[
-            ("device_id", device_id),
-            ("user_password", device_password),
-            ("NIF", nif),
-            ("sistema_operativo", OS_NAME),
-            ("version_os", OS_VERSION),
-            ("version_app", APP_VERSION),
-            ("aut_fir", "0"),
-            ("resultado", resultado),
-            ("organismo", ""),
-            ("fecha_desde", fecha_desde),
-            ("fecha_hasta", fecha_hasta),
-            ("tipo", "111"),
-            ("orden", "0"),
-        ]).await
+        self.post_form(
+            "operations_history",
+            &url,
+            &[
+                ("device_id", device_id),
+                ("user_password", device_password),
+                ("NIF", nif),
+                ("sistema_operativo", OS_NAME),
+                ("version_os", OS_VERSION),
+                ("version_app", APP_VERSION),
+                ("aut_fir", "0"),
+                ("resultado", resultado),
+                ("organismo", ""),
+                ("fecha_desde", fecha_desde),
+                ("fecha_hasta", fecha_hasta),
+                ("tipo", "111"),
+                ("orden", "0"),
+            ],
+        )
+        .await
     }
 
     /// Validate Llave Móvil token.
@@ -885,9 +946,8 @@ impl LlaveClient {
         token: &str,
     ) -> Result<ApiResponse<serde_json::Value>> {
         let url = format!("{BASE_URL_WWW12}/wlpl/MOVI-P24H/ValidarClaveMovil");
-        self.post_form("validate_llave_movil", &url, &[
-            ("tokenClaveMovil", token),
-        ]).await
+        self.post_form("validate_llave_movil", &url, &[("tokenClaveMovil", token)])
+            .await
     }
 
     /// Request SMS verification code for device activation.
@@ -909,11 +969,16 @@ impl LlaveClient {
         pin: &str,
     ) -> Result<ApiResponse<serde_json::Value>> {
         let url = format!("{BASE_URL_WWW12}/wlpl/MOVI-P24H/ValidarClaveMovilSMS");
-        self.post_form("validate_sms_code", &url, &[
-            ("timeStampAltaSms", timestamp),
-            ("tokenClaveMovilSms", token),
-            ("pinAcceso", pin),
-        ]).await
+        self.post_form(
+            "validate_sms_code",
+            &url,
+            &[
+                ("timeStampAltaSms", timestamp),
+                ("tokenClaveMovilSms", token),
+                ("pinAcceso", pin),
+            ],
+        )
+        .await
     }
 
     /// QR code authentication.
@@ -924,14 +989,19 @@ impl LlaveClient {
         qr_value: &str,
     ) -> Result<ApiResponse<serde_json::Value>> {
         let url = format!("{BASE_URL}/wlpl/MOVI-P24H/ClaveMovilQrSv");
-        self.post_form("qr_authenticate", &url, &[
-            ("device_id", device_id),
-            ("NIF", nif),
-            ("sistema_operativo", OS_NAME),
-            ("version_os", OS_VERSION),
-            ("version_app", APP_VERSION),
-            ("valor_qr", qr_value),
-        ]).await
+        self.post_form(
+            "qr_authenticate",
+            &url,
+            &[
+                ("device_id", device_id),
+                ("NIF", nif),
+                ("sistema_operativo", OS_NAME),
+                ("version_os", OS_VERSION),
+                ("version_app", APP_VERSION),
+                ("valor_qr", qr_value),
+            ],
+        )
+        .await
     }
 }
 
@@ -980,7 +1050,10 @@ mod tests {
             ("pin24H", "p"),
         ]);
         retain_persistent_cookies(&mut cookies);
-        assert_eq!(cookies, jar(&[("appmovil", "a"), ("sgat-language", "es_ES")]));
+        assert_eq!(
+            cookies,
+            jar(&[("appmovil", "a"), ("sgat-language", "es_ES")])
+        );
     }
 
     // -- redirects --
@@ -1003,7 +1076,10 @@ mod tests {
             r#"{"status":"KO","codigo_error":"500600","mensaje":"Actualice"}"#,
         )
         .unwrap();
-        assert!(matches!(resp.into_result(), Err(LlaveError::AppVersionOutdated { .. })));
+        assert!(matches!(
+            resp.into_result(),
+            Err(LlaveError::AppVersionOutdated { .. })
+        ));
     }
 
     // -- classify_dni_body --
@@ -1021,10 +1097,14 @@ mod tests {
 
     #[test]
     fn dni_body_minus_8_requires_birth_date_azul() {
-        let body = r#"{"status":"KO","codigo_error":"-8","mensaje":"Introduzca fecha de nacimiento"}"#;
+        let body =
+            r#"{"status":"KO","codigo_error":"-8","mensaje":"Introduzca fecha de nacimiento"}"#;
         assert!(matches!(
             classify_dni_body(body),
-            Some(Err(LlaveError::DniBirthDateRequired { challenge: DniChallenge::Azul, .. }))
+            Some(Err(LlaveError::DniBirthDateRequired {
+                challenge: DniChallenge::Azul,
+                ..
+            }))
         ));
     }
 
@@ -1033,7 +1113,10 @@ mod tests {
         let body = r#"{"status":"KO","codigo_error":"-10","mensaje":"x"}"#;
         assert!(matches!(
             classify_dni_body(body),
-            Some(Err(LlaveError::DniBirthDateRequired { challenge: DniChallenge::FechaNie, .. }))
+            Some(Err(LlaveError::DniBirthDateRequired {
+                challenge: DniChallenge::FechaNie,
+                ..
+            }))
         ));
     }
 
@@ -1070,12 +1153,18 @@ mod tests {
 
     #[test]
     fn ko_error_maps_special_codes() {
-        assert!(matches!(ko("16600", Some("m")).ko_error("x"), LlaveError::IpRateLimited { .. }));
+        assert!(matches!(
+            ko("16600", Some("m")).ko_error("x"),
+            LlaveError::IpRateLimited { .. }
+        ));
         assert!(matches!(
             ko("500600", Some("m")).ko_error("x"),
             LlaveError::AppVersionOutdated { .. }
         ));
-        assert!(matches!(ko("300", Some("m")).ko_error("x"), LlaveError::Api { .. }));
+        assert!(matches!(
+            ko("300", Some("m")).ko_error("x"),
+            LlaveError::Api { .. }
+        ));
     }
 
     #[test]
@@ -1089,7 +1178,10 @@ mod tests {
     #[test]
     fn dni_body_other_ko_is_api_error() {
         let body = r#"{"status":"KO","codigo_error":"-1","mensaje":"Datos incorrectos"}"#;
-        assert!(matches!(classify_dni_body(body), Some(Err(LlaveError::Api { .. }))));
+        assert!(matches!(
+            classify_dni_body(body),
+            Some(Err(LlaveError::Api { .. }))
+        ));
     }
 
     // -- DniChallenge --
@@ -1101,12 +1193,18 @@ mod tests {
 
     #[test]
     fn challenge_azul_sets_azul_flag() {
-        assert_eq!(DniChallenge::form_flags(Some(DniChallenge::Azul)), ("X", ""));
+        assert_eq!(
+            DniChallenge::form_flags(Some(DniChallenge::Azul)),
+            ("X", "")
+        );
     }
 
     #[test]
     fn challenge_fecha_nie_sets_fechanie_flag() {
-        assert_eq!(DniChallenge::form_flags(Some(DniChallenge::FechaNie)), ("", "X"));
+        assert_eq!(
+            DniChallenge::form_flags(Some(DniChallenge::FechaNie)),
+            ("", "X")
+        );
     }
 
     // -- client identity --
@@ -1124,7 +1222,10 @@ mod tests {
     // -- build_cookie_header --
 
     fn jar(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[test]
@@ -1232,7 +1333,11 @@ mod tests {
         };
         let err = resp.into_result().unwrap_err();
         match err {
-            LlaveError::Api { status, code, message } => {
+            LlaveError::Api {
+                status,
+                code,
+                message,
+            } => {
                 assert_eq!(status, "KO");
                 assert_eq!(code, "999");
                 assert_eq!(message, "something failed");

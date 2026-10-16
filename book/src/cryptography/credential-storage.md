@@ -37,7 +37,7 @@ The older `LlavePinAlias` AES-GCM key and the `LlavePin` / `LlaveCertificados` f
 
 ## llave
 
-llave does not copy the app's storage. It stores one JSON [session](../implementation-guide/session-persistence.md) (`device_id`, `nif`, `device_password`, `firebase_token`, `created_at`, `poll_cursor`):
+llave does not copy the app's storage. It stores one JSON [session](../implementation-guide/session-persistence.md) (`device_id`, `nif`, `device_password`, `created_at`, `poll_cursor`):
 
 | Client | Storage |
 |--------|---------|

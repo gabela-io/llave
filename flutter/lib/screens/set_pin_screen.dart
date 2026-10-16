@@ -64,7 +64,8 @@ class _SetPinScreenState extends ConsumerState<SetPinScreen> {
 
       if (mounted) context.go(AppRoutes.home);
     } catch (e) {
-      setState(() => _error = e.toString());
+      debugPrint('PIN setup failed: $e');
+      if (mounted) setState(() => _error = AppLocalizations.of(context)!.errorUnexpected);
     } finally {
       if (mounted) setState(() => _loading = false);
     }

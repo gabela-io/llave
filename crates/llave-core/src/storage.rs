@@ -81,12 +81,10 @@ impl SecureStorage for KeyringStorage {
         tracing::debug!(backend = "keyring", "session save");
         let entry = keyring::Entry::new(&self.service, &self.account)
             .map_err(|e| LlaveError::Keyring(e.to_string()))?;
-        entry
-            .set_password(data)
-            .map_err(|e| {
-                tracing::error!(backend = "keyring", err = %e, "save failed");
-                LlaveError::Keyring(e.to_string())
-            })?;
+        entry.set_password(data).map_err(|e| {
+            tracing::error!(backend = "keyring", err = %e, "save failed");
+            LlaveError::Keyring(e.to_string())
+        })?;
         Ok(())
     }
 
@@ -94,12 +92,10 @@ impl SecureStorage for KeyringStorage {
         tracing::debug!(backend = "keyring", "session load");
         let entry = keyring::Entry::new(&self.service, &self.account)
             .map_err(|e| LlaveError::Keyring(e.to_string()))?;
-        entry
-            .get_password()
-            .map_err(|e| {
-                tracing::debug!(backend = "keyring", err = %e, "load failed");
-                LlaveError::Keyring(e.to_string())
-            })
+        entry.get_password().map_err(|e| {
+            tracing::debug!(backend = "keyring", err = %e, "load failed");
+            LlaveError::Keyring(e.to_string())
+        })
     }
 
     fn delete(&self) -> Result<()> {
@@ -381,7 +377,10 @@ mod tests {
 
     /// Storage under a temp dir whose prompt always answers `pin` and records
     /// every request.
-    fn sealed(dir: &tempfile::TempDir, pin: &str) -> (SealedFileStorage, Arc<StdMutex<Vec<PinRequest>>>) {
+    fn sealed(
+        dir: &tempfile::TempDir,
+        pin: &str,
+    ) -> (SealedFileStorage, Arc<StdMutex<Vec<PinRequest>>>) {
         let calls = Arc::new(StdMutex::new(Vec::new()));
         let seen = calls.clone();
         let pin = pin.to_string();
@@ -450,7 +449,10 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         sealed(&dir, "1234").0.save("session").unwrap();
-        let mode = std::fs::metadata(dir.path().join("session.sealed")).unwrap().permissions().mode();
+        let mode = std::fs::metadata(dir.path().join("session.sealed"))
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o777, 0o600);
     }
 
@@ -487,7 +489,10 @@ mod tests {
         let before = std::fs::read(dir.path().join("session.sealed")).unwrap();
         let (store, calls) = sealed(&dir, "1234");
         store.save("v2").unwrap();
-        assert_eq!(std::fs::read(dir.path().join("session.sealed")).unwrap(), before);
+        assert_eq!(
+            std::fs::read(dir.path().join("session.sealed")).unwrap(),
+            before
+        );
         assert!(calls.lock().unwrap().is_empty());
     }
 

@@ -6,8 +6,7 @@
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `challenge_from_name`, `challenge_name`, `failure`, `save_session_config`, `session_and_client`, `success`, `to_ffi_result`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `FfiSession`
+// These functions are ignored because they are not marked as `pub`: `challenge_from_name`, `challenge_name`, `failure`, `session_and_client`, `success`, `to_ffi_result`
 
 /// Initialise the Rust core storage backend.
 ///
@@ -224,23 +223,17 @@ class FfiStatus {
   final String? nif;
   final String? deviceId;
   final String? createdAt;
-  final bool hasFirebaseToken;
 
   const FfiStatus({
     required this.active,
     this.nif,
     this.deviceId,
     this.createdAt,
-    required this.hasFirebaseToken,
   });
 
   @override
   int get hashCode =>
-      active.hashCode ^
-      nif.hashCode ^
-      deviceId.hashCode ^
-      createdAt.hashCode ^
-      hasFirebaseToken.hashCode;
+      active.hashCode ^ nif.hashCode ^ deviceId.hashCode ^ createdAt.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -250,6 +243,5 @@ class FfiStatus {
           active == other.active &&
           nif == other.nif &&
           deviceId == other.deviceId &&
-          createdAt == other.createdAt &&
-          hasFirebaseToken == other.hasFirebaseToken;
+          createdAt == other.createdAt;
 }

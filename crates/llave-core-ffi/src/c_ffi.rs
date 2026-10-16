@@ -40,7 +40,11 @@ unsafe fn to_opt(ptr: *const c_char) -> Option<String> {
     } else {
         // SAFETY: non-null and, per the caller contract, NUL-terminated and
         // alive for the duration of the call.
-        Some(unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned())
+        Some(
+            unsafe { CStr::from_ptr(ptr) }
+                .to_string_lossy()
+                .into_owned(),
+        )
     }
 }
 
@@ -140,7 +144,6 @@ pub extern "C" fn llave_get_status() -> *mut c_char {
             "nif": s.nif,
             "deviceId": s.device_id,
             "createdAt": s.created_at,
-            "hasFirebaseToken": s.has_firebase_token,
         }))
     })
 }
@@ -223,10 +226,12 @@ pub unsafe extern "C" fn llave_change_session_pin(
 ) -> *mut c_char {
     // SAFETY: caller contract.
     let (sealed, old_pin, new_pin) = unsafe { (to_str(sealed), to_str(old_pin), to_str(new_pin)) };
-    ffi_guard(|| match crate::api::change_session_pin(sealed, old_pin, new_pin) {
-        Ok(v) => ok_json(serde_json::Value::String(v)),
-        Err(e) => err_json(&e),
-    })
+    ffi_guard(
+        || match crate::api::change_session_pin(sealed, old_pin, new_pin) {
+            Ok(v) => ok_json(serde_json::Value::String(v)),
+            Err(e) => err_json(&e),
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -322,8 +327,14 @@ pub unsafe extern "C" fn llave_dni_authenticate(
     challenge: *const c_char,
 ) -> *mut c_char {
     // SAFETY: caller contract.
-    let (nif, fecha, soporte, challenge) =
-        unsafe { (to_str(nif), to_str(fecha), to_str(soporte), to_str(challenge)) };
+    let (nif, fecha, soporte, challenge) = unsafe {
+        (
+            to_str(nif),
+            to_str(fecha),
+            to_str(soporte),
+            to_str(challenge),
+        )
+    };
     ffi_guard(|| {
         api_result_json(rt().block_on(crate::api::dni_authenticate(nif, fecha, soporte, challenge)))
     })
@@ -381,7 +392,9 @@ mod tests {
     /// Take ownership of an export's result and parse its JSON envelope.
     fn take(ptr: *mut c_char) -> serde_json::Value {
         // SAFETY: `ptr` was just returned by a `llave_*` export.
-        let s = unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned();
+        let s = unsafe { CStr::from_ptr(ptr) }
+            .to_string_lossy()
+            .into_owned();
         // SAFETY: freed exactly once, not used afterwards.
         unsafe { llave_free_string(ptr) };
         serde_json::from_str(&s).unwrap()

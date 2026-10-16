@@ -207,15 +207,15 @@ fn dni_fields(nif: &str, fecha: &str, soporte: &str) -> Result<(String, String)>
     use llave_core::config::{required_dni_input, DniInput};
     let missing = |what: &str| LlaveError::Config(format!("{nif} requires {what}"));
     match required_dni_input(nif) {
-        DniInput::ValidityDate if fecha.is_empty() => {
-            Err(missing("--fecha with the ID card validity date (DD-MM-YYYY)"))
-        }
+        DniInput::ValidityDate if fecha.is_empty() => Err(missing(
+            "--fecha with the ID card validity date (DD-MM-YYYY)",
+        )),
         DniInput::BirthDate if fecha.is_empty() => {
             Err(missing("--fecha with your date of birth (DD-MM-YYYY)"))
         }
-        DniInput::SupportNumber if soporte.is_empty() => {
-            Err(missing("--soporte with the support number of your NIE card"))
-        }
+        DniInput::SupportNumber if soporte.is_empty() => Err(missing(
+            "--soporte with the support number of your NIE card",
+        )),
         DniInput::ValidityDate | DniInput::BirthDate => Ok((fecha.to_string(), String::new())),
         DniInput::SupportNumber => Ok((String::new(), soporte.to_string())),
     }
@@ -229,7 +229,9 @@ fn sealed_session_path() -> Result<std::path::PathBuf> {
 /// Ask for the PIN on the terminal without echo. A new PIN is entered twice.
 fn prompt_pin(request: PinRequest) -> Result<zeroize::Zeroizing<String>> {
     let read = |message: &str| -> Result<zeroize::Zeroizing<String>> {
-        Ok(zeroize::Zeroizing::new(rpassword::prompt_password(message)?))
+        Ok(zeroize::Zeroizing::new(rpassword::prompt_password(
+            message,
+        )?))
     };
     match request {
         PinRequest::Create => {
@@ -268,7 +270,9 @@ fn is_yes(answer: &str) -> bool {
 fn confirm_security_check(codigo_idp: &str) -> Result<bool> {
     eprintln!("Verification code: {codigo_idp}");
     eprintln!("It must match the code shown on the website where you are logging in.");
-    eprintln!("Only continue if you started this login yourself, not from a link in an email or SMS,");
+    eprintln!(
+        "Only continue if you started this login yourself, not from a link in an email or SMS,"
+    );
     eprintln!("and the website address starts with https://www2. or https://www12.agenciatributaria.gob.es");
     let answer = prompt("Confirm this request? Answering no rejects it [y/N]: ")?;
     Ok(is_yes(&answer))
@@ -390,21 +394,24 @@ async fn run(cli: &Cli) -> Result<()> {
 
             // Phase 1: DNI/NIE auth → registration check → SMS sent.
             // Like the app, retry once with the date of birth if asked.
-            let phase1 =
-                match llave_core::auth::dni_request_sms(&client, &nif, &fecha, &soporte, None).await {
-                    Err(LlaveError::DniBirthDateRequired { challenge, message }) => {
-                        let birth_date = prompt_birth_date(&message)?;
-                        llave_core::auth::dni_request_sms(
-                            &client,
-                            &nif,
-                            &birth_date,
-                            "",
-                            Some(challenge),
-                        )
-                        .await?
-                    }
-                    other => other?,
-                };
+            let phase1 = match llave_core::auth::dni_request_sms(
+                &client, &nif, &fecha, &soporte, None,
+            )
+            .await
+            {
+                Err(LlaveError::DniBirthDateRequired { challenge, message }) => {
+                    let birth_date = prompt_birth_date(&message)?;
+                    llave_core::auth::dni_request_sms(
+                        &client,
+                        &nif,
+                        &birth_date,
+                        "",
+                        Some(challenge),
+                    )
+                    .await?
+                }
+                other => other?,
+            };
 
             // Prompt on stderr so stdout stays machine-readable.
             let sms_pin = prompt(&format!(
@@ -428,10 +435,9 @@ async fn run(cli: &Cli) -> Result<()> {
             )
             .await?;
 
-            let mut cfg = Config::load()?;
-            cfg.nif = Some(nif.clone());
-            cfg.device_id = Some(session.device_id.clone());
-            cfg.save()?;
+            if let Err(e) = Config::remember_activation(&nif, &session.device_id) {
+                eprintln!("warning: could not save the config: {e}");
+            }
 
             output(
                 cli,
@@ -460,27 +466,14 @@ async fn run(cli: &Cli) -> Result<()> {
         }
 
         Commands::Check { nif } => {
-            let nif = if let Some(n) = nif {
-                validate_nif(n)?
-            } else {
-                let cfg = Config::load()?;
-                cfg.nif.ok_or(LlaveError::Config(
-                    "No NIF configured. Use --nif or run `llave activate` first.".into(),
-                ))?
-            };
-
             let client = LlaveClient::new()?;
-            // Like the app: the stored device id (empty if not activated).
-            let device_id = Session::load().map(|s| s.device_id).unwrap_or_default();
-
-            let resp = client.clave_is_nif_activated(&device_id, &nif).await?;
-
+            let check = llave_core::auth::check_nif(&client, nif.as_deref()).await?;
             output(
                 cli,
                 json!({
-                    "nif": nif,
-                    "status": resp.status,
-                    "response": resp.respuesta,
+                    "nif": check.nif,
+                    "status": check.status,
+                    "response": check.response,
                 }),
             );
         }
@@ -496,8 +489,14 @@ async fn run(cli: &Cli) -> Result<()> {
             match llave_core::auth::authenticate_dni(&client, &nif, &fecha, &soporte, None).await {
                 Err(LlaveError::DniBirthDateRequired { challenge, message }) => {
                     let birth_date = prompt_birth_date(&message)?;
-                    llave_core::auth::authenticate_dni(&client, &nif, &birth_date, "", Some(challenge))
-                        .await?;
+                    llave_core::auth::authenticate_dni(
+                        &client,
+                        &nif,
+                        &birth_date,
+                        "",
+                        Some(challenge),
+                    )
+                    .await?;
                 }
                 other => other?,
             }
@@ -523,7 +522,6 @@ async fn run(cli: &Cli) -> Result<()> {
                             "nif": session.nif,
                             "device_id": session.device_id,
                             "created_at": session.created_at,
-                            "has_firebase_token": session.firebase_token.is_some(),
                         }),
                     );
                 }

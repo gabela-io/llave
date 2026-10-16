@@ -7,7 +7,7 @@ Rust core + CLI + Flutter app for Cl@ve. Behaviour must match the official app 6
 | Command | Purpose |
 |---|---|
 | `just test` | Rust tests (core, CLI, FFI) |
-| `just lint` | clippy with `-D warnings` (must stay clean) |
+| `just lint` | rustfmt check and clippy with `-D warnings` (must stay clean) |
 | `just run <args>` | Run the CLI, e.g. `just run pin --plain` |
 | `cd flutter && flutter analyze` | Dart analysis (must report no issues) |
 | `just frb-generate` | Regenerate flutter_rust_bridge bindings (see Gotchas) |

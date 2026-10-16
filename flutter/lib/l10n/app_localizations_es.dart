@@ -85,9 +85,6 @@ class AppLocalizationsEs extends AppLocalizations {
   String get confirm => 'Confirmar';
 
   @override
-  String get reject => 'Rechazar';
-
-  @override
   String get save => 'Guardar';
 
   @override
@@ -145,6 +142,9 @@ class AppLocalizationsEs extends AppLocalizations {
       'Respuesta inesperada de los servidores de la AEAT. Inténtalo más tarde.';
 
   @override
+  String get errorUnexpected => 'Algo ha fallado. Inténtalo de nuevo.';
+
+  @override
   String get invalidResponse => 'Respuesta no válida del servidor';
 
   @override
@@ -190,15 +190,6 @@ class AppLocalizationsEs extends AppLocalizations {
       'Se borrará tu sesión. Podrás reactivarla más tarde.';
 
   @override
-  String get noActiveSession => 'Sin sesión activa';
-
-  @override
-  String get activateToStart => 'Activa tu dispositivo para comenzar.';
-
-  @override
-  String get activateDevice => 'Activar dispositivo';
-
-  @override
   String get qrAuthentication => 'Autenticación QR';
 
   @override
@@ -228,35 +219,10 @@ class AppLocalizationsEs extends AppLocalizations {
   String get pendingTitle => 'Solicitudes pendientes';
 
   @override
-  String get pendingEmptyTitle => 'No hay solicitudes pendientes';
-
-  @override
-  String get pendingEmptySubtitle =>
-      'Las solicitudes de autenticación aparecerán aquí\ncuando sean detectadas por el servidor.';
-
-  @override
   String get requestConfirmed => 'Solicitud confirmada';
 
   @override
   String get requestRejected => 'Solicitud rechazada';
-
-  @override
-  String get failed => 'Fallido';
-
-  @override
-  String providerCode(String code) {
-    return 'Código de proveedor: $code';
-  }
-
-  @override
-  String actionRequestTitle(String action) {
-    return '¿$action solicitud?';
-  }
-
-  @override
-  String actionRequestMessage(String action) {
-    return '¿Estás seguro de que quieres $action esta solicitud de autenticación?';
-  }
 
   @override
   String get historyTitle => 'Historial';
@@ -269,21 +235,6 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get rejected => 'Rechazada';
-
-  @override
-  String get myDataTitle => 'Mis datos';
-
-  @override
-  String get noData => 'Sin datos';
-
-  @override
-  String get accountInformation => 'Información de la cuenta';
-
-  @override
-  String get nifLabel => 'NIF';
-
-  @override
-  String get registrationLevel => 'Nivel de registro';
 
   @override
   String get qrAuthTitle => 'Autenticación QR';
@@ -322,12 +273,6 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get dniAuthTitle => 'Autenticación DNI/NIE';
-
-  @override
-  String get deviceActivated => '¡Dispositivo activado correctamente!';
-
-  @override
-  String get goToHome => 'Ir al inicio';
 
   @override
   String get smsVerification => 'Verificación por SMS';
@@ -468,8 +413,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get poweredBy => 'Desarrollado con';
 
   @override
-  String get poweredByValue =>
-      'Núcleo Rust (llave-core) vía flutter_rust_bridge';
+  String get poweredByValue => 'Núcleo Rust (llave-core) vía FFI';
 
   @override
   String get developer => 'Desarrollador';
@@ -588,19 +532,6 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get forgotPin => '¿Olvidaste el PIN?';
-
-  @override
-  String get activateLlave => 'Activar Llave';
-
-  @override
-  String get registerDevice => 'Registra este dispositivo con tu cuenta Cl@ve.';
-
-  @override
-  String get activateWithDni => 'Activar con DNI/NIE';
-
-  @override
-  String get dniActivateDescription =>
-      'Necesitarás los datos impresos en tu DNI/NIE físico y acceso al número de teléfono registrado en Cl@ve.';
 
   @override
   String get setYourPin => 'Establece tu PIN';

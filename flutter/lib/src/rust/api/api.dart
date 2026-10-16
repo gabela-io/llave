@@ -1,7 +1,7 @@
 // Native C FFI bindings to libllave_core_ffi.so.
 //
-// Replaces the flutter_rust_bridge stubs with direct dart:ffi calls
-// to the `extern "C"` functions exported by the Rust FFI crate.
+// Direct dart:ffi calls to the `extern "C"` functions exported by the Rust
+// FFI crate.
 
 import 'dart:convert';
 import 'dart:ffi' as ffi;
@@ -13,31 +13,16 @@ import 'package:ffi/ffi.dart';
 // FFI types
 // ---------------------------------------------------------------------------
 
-class FfiSession {
-  final String deviceId;
-  final String nif;
-  final String createdAt;
-  final bool hasFirebaseToken;
-  const FfiSession({
-    required this.deviceId,
-    required this.nif,
-    required this.createdAt,
-    required this.hasFirebaseToken,
-  });
-}
-
 class FfiStatus {
   final bool active;
   final String? nif;
   final String? deviceId;
   final String? createdAt;
-  final bool hasFirebaseToken;
   const FfiStatus({
     required this.active,
     this.nif,
     this.deviceId,
     this.createdAt,
-    required this.hasFirebaseToken,
   });
 }
 
@@ -237,7 +222,6 @@ FfiStatus getStatus() {
     nif: d['nif'] as String?,
     deviceId: d['deviceId'] as String?,
     createdAt: d['createdAt'] as String?,
-    hasFirebaseToken: d['hasFirebaseToken'] as bool,
   );
 }
 
