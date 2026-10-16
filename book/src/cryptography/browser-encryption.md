@@ -1,47 +1,30 @@
-# Browser Encryption
+# Browser Encryption (Removed)
 
-The app encrypts data for browser handoff using AES-CBC with PBKDF2 key derivation. This is used when the app needs to pass authentication context to a browser session.
+> **Historical note.** Earlier analyses of the Cl@ve app described an
+> AES-CBC/PBKDF2 scheme (`KeyChainManager.encryptTextForBrowser()`) for passing
+> device credentials to a browser. **It no longer exists in Cl@ve 6.2.10
+> (build 294)**, and llave has removed its implementation.
 
-## Algorithm
+## What Changed in 6.2.10
 
-Found in `KeyChainManager.encryptTextForBrowser()`:
+- The app code contains no `encryptTextForBrowser`, `javax.crypto`, `Cipher`, `SecretKeySpec` or PBKDF2. Its only hand-written cryptographic primitive is `MessageDigest` SHA-512, used for the [device password](./device-password.md).
+- `PreferencesManager` still has `save/getServerPassphrase`, `save/getServerIv` and `save/getServerSalt`, but nothing calls them. They are dead leftovers.
+- The plaintext payload format (`$id_dispositivo:…$password_dispositivo:…$url_destino:…`) appears nowhere in the app.
+- Local secrets are now protected by Google Tink (see [Credential Storage](./credential-storage.md)), not by this scheme.
 
-```
-Algorithm: AES/CBC/PKCS5PADDING
-Key derivation: PBKDF2WithHmacSHA1
-  - Passphrase: serverPassphrase (received from server)
-  - Salt: serverSalt (hex string, received from server)
-  - Iterations: 1000
-  - Key length: 128 bits
-IV: serverIv (hex string, received from server)
-Output: Base64 -> URI-encoded
-```
+## What It Used to Be
 
-## Encrypted Payload Format
+From older app versions; it could not be re-verified against 6.2.10:
 
 ```
-$id_dispositivo:<device_id>
-$password_dispositivo:<device_password>
-$url_destino:<target_url>
-$idioma:<lang>_ES
-[$NIF:<nif>]
-[$datoContraste:<contrast_data>$tipoAutenticacion:<auth_type>]
-[$codigo:<code>$pin:<pin>]
+Algorithm:      AES/CBC/PKCS5PADDING
+Key derivation: PBKDF2WithHmacSHA1, 1000 iterations, 128-bit key
+                passphrase / salt / IV supplied by the server
+Output:         Base64, then URI-encoded
 ```
 
-Fields in brackets are optional and included depending on the context.
+## llave
 
-## Key Points
+`crypto::encrypt_for_browser` and `build_browser_payload` had no callers and have been deleted, together with their dependencies (`aes`, `cbc`, `pbkdf2`, `sha1`, `hmac`). llave's own session encryption (Argon2id + AES-256-GCM) is unrelated; see [Credential Storage](./credential-storage.md#llave).
 
-- All encryption parameters (`serverPassphrase`, `serverIv`, `serverSalt`) come from the server, making this a server-controlled scheme.
-- The output is Base64-encoded, then URI-encoded for transmission.
-- This is only used for browser handoff scenarios -- not for general API communication.
-
-## SAML Form-Based Flow
-
-The DNIe path through `pasarela.clave.gob.es` uses standard SAML redirects:
-- No custom crypto beyond TLS mutual auth with the DNIe certificate
-- The eID card provides the `SSLSocketFactory` for client certificate authentication
-- Forms contain `SAMLResponse` fields for assertion relay
-
-See [SAML / DNIe Authentication](../authentication-flows/saml-dnie.md) for the full flow.
+For the DNIe SAML path, see [SAML / DNIe Authentication](../authentication-flows/saml-dnie.md).

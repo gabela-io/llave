@@ -1,20 +1,22 @@
 # Llave
 
-Llave is an open-source Rust implementation of the Spanish AEAT Cl@ve PIN authentication system.
+Llave is an open-source Rust implementation of the Spanish AEAT Cl@ve mobile authentication system (Cl@ve PIN and Cl@ve Móvil).
+
+This book documents the protocol as used by the official Android app **Cl@ve v6.2.10 (build 294)**, `es.aeat.pin24h`, and how llave implements it. Behaviour seen only by llave against the server, and not found in the app, is marked as empirical.
 
 ## Terminology
 
 | Term | Description |
 |------|-------------|
-| **NIF** | Numero de Identificacion Fiscal. The Spanish tax ID number (8 digits + letter for DNI, or X/Y/Z + 7 digits + letter for NIE). |
+| **NIF** | Número de Identificación Fiscal, the Spanish tax ID (DNI: 8 digits + letter; NIE: X/Y/Z + 7 digits + letter; special K/L/M + 7 digits + letter). |
 | **DNI** | Documento Nacional de Identidad. The Spanish national ID card. |
-| **NIE** | Numero de Identidad de Extranjero. Foreign national identification number in Spain. |
-| **Soporte** | The support/serial number printed on the physical DNI/NIE card. |
-| **Fecha** | The date of validity or date of birth, formatted as `DD-MM-YYYY`. |
-| **Autenticacion debil** | "Weak authentication" -- identity proven via card data (NIF + fecha + soporte) rather than a digital certificate. |
-| **Clave PIN** | A temporary 4-digit PIN valid for ~5 minutes, used for one-time authentication to government services. |
-| **Clave Movil** | The mobile-based authentication system. The app on the user's device. |
-| **device_id** | A server-generated UUID identifying the activated device. |
-| **device_password** | A client-generated UUID used as a shared secret between device and server. |
-| **pin24H** | A session cookie set after SMS validation. Required for device activation on www6. Named for the original 24-hour validity window. |
-| **TrazasApp** | A custom HTTP header containing serialised cookie diagnostic information, mimicking the Android app's internal telemetry. |
+| **NIE** | Número de Identidad de Extranjero. Foreign national identification number in Spain. |
+| **Fecha** | `FECHA` form field: the DNI validity date (`dd-MM-yyyy`), or the date of birth for K/L DNIs, M NIEs and the `-8`/`-10` retries. Empty for X/Y/Z NIEs. |
+| **Soporte** | `SOPORTE` form field: the support number printed on an X/Y/Z NIE card. Empty for DNIs. |
+| **Autenticación débil** | "Weak authentication": identity proven with card data (NIF + fecha or soporte) instead of a certificate. |
+| **Cl@ve PIN** | A short-lived PIN for one login. It is requested on the AEAT website; the app only reveals the pending PIN (`ClaveRequestPinSv`). |
+| **Cl@ve Móvil** | Login approved from the app: the website creates a request (`peticion`) that the user confirms or rejects on the device. |
+| **device_id** | Server-assigned identifier of the activated device, returned by `ClaveActivateAuthenticationSv`. |
+| **device_password** | Client-generated shared secret, sent as `user_password`: SHA-512 (uppercase hex, 128 chars) of 256 random alphanumeric characters. |
+| **appmovil** | Cookie that marks a mobile-app session; may be set by `ClaveStartingSv`, otherwise requested with `SetCookieAppMovil`. |
+| **pin24H** | Cookie set by `ValidarClaveMovilSMS` after the SMS code is validated. Required for device activation on www6. |

@@ -22,7 +22,7 @@
 - [Pending Operations Polling](./authentication-flows/pending-operations-polling.md)
 - [QR Code](./authentication-flows/qr-code.md)
 - [DNI/NIE + SMS Activation](./authentication-flows/dni-nie-sms-activation.md)
-- [Token Activation](./authentication-flows/token-activation.md)
+- [www12 Web Login](./authentication-flows/token-activation.md)
 - [Certificate Registration](./authentication-flows/certificate-registration.md)
 - [SAML / DNIe](./authentication-flows/saml-dnie.md)
 
@@ -35,6 +35,6 @@
 
 # Cryptography
 
-- [Browser Encryption](./cryptography/browser-encryption.md)
+- [Browser Encryption (Removed)](./cryptography/browser-encryption.md)
 - [Device Password](./cryptography/device-password.md)
 - [Credential Storage](./cryptography/credential-storage.md)
