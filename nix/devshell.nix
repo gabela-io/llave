@@ -39,6 +39,13 @@ let
     includeSources = false;
   };
   androidSdk = androidComposition.androidsdk;
+
+  # Headless JADX engine used by the REA MCP server for APK analysis.
+  # Hash pinned by REA (src/android/JadxRelease.ts).
+  jadxHeadlessMcp = pkgs.fetchurl {
+    url = "https://github.com/1013503897/jadx-headless-mcp/releases/download/v0.7.1/jadx-headless-mcp-0.7.1-all.jar";
+    sha256 = "6e5eacf500b64292bfb73c49797c1958f6ee44646e43e868039ae7feb573ff75";
+  };
 in
 pkgs.mkShell (
   {
@@ -84,10 +91,12 @@ pkgs.mkShell (
       # APK reverse engineering tools
       pkgs.apktool
       pkgs.jadx
+      pkgs.ghidra
+      pkgs.procps # REA requires a procps-compatible `ps` for process ownership checks
     ]
     ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
       androidSdk
-      pkgs.jdk17
+      pkgs.jdk21 # Ghidra 12.1 requires JDK 21+
       pkgs.cargo-ndk
     ]
     ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
@@ -97,6 +106,10 @@ pkgs.mkShell (
     ];
 
     RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
+
+    # REA MCP providers (reverse engineering)
+    GHIDRA_INSTALL_DIR = "${pkgs.ghidra}/lib/ghidra";
+    REA_JADX_MCP_JAR = "${jadxHeadlessMcp}";
 
     shellHook = ''
           # Ensure flutter_rust_bridge_codegen is available
@@ -127,6 +140,6 @@ pkgs.mkShell (
     ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
     ANDROID_NDK_HOME = "${androidSdk}/libexec/android-sdk/ndk/28.2.13676358";
     NDK_HOME = "${androidSdk}/libexec/android-sdk/ndk/28.2.13676358";
-    JAVA_HOME = "${pkgs.jdk17.home}";
+    JAVA_HOME = "${pkgs.jdk21.home}";
   }
 )
