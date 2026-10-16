@@ -104,8 +104,6 @@ typedef _Fn5Dart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>,
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 
-typedef _FnListenC = ffi.Pointer<Utf8> Function(ffi.Uint64, ffi.Uint32);
-typedef _FnListenDart = ffi.Pointer<Utf8> Function(int, int);
 
 // ---------------------------------------------------------------------------
 // Low-level helpers (usable from any isolate)
@@ -161,14 +159,6 @@ Map<String, dynamic> _call2(String libPath, String symbol, String? a1, String? a
   _freeNative(p1);
   _freeNative(p2);
   return result;
-}
-
-/// Call listen_for_requests (u64, u32 args).
-Map<String, dynamic> _callListen(
-    String libPath, String symbol, int intervalSecs, int maxAttempts) {
-  final lib = ffi.DynamicLibrary.open(libPath);
-  final fn = lib.lookupFunction<_FnListenC, _FnListenDart>(symbol);
-  return _parseResult(lib, fn(intervalSecs, maxAttempts));
 }
 
 /// Call a 3-arg native function.
@@ -266,18 +256,6 @@ String changeSessionPin(
 // Async API (run in isolate to avoid blocking UI)
 // ---------------------------------------------------------------------------
 
-Future<FfiSession> activateDevice({required String nif, String? password}) async {
-  final lp = nativeLibPath;
-  final r = await Isolate.run(() => _checkOk(_call2(lp, 'llave_activate_device', nif, password)));
-  final d = r['data'] as Map<String, dynamic>;
-  return FfiSession(
-    deviceId: d['deviceId'] as String,
-    nif: d['nif'] as String,
-    createdAt: d['createdAt'] as String,
-    hasFirebaseToken: d['hasFirebaseToken'] as bool,
-  );
-}
-
 Future<FfiPinResult> requestPin() async {
   final lp = nativeLibPath;
   final r = await Isolate.run(() => _checkOk(_call0(lp, 'llave_request_pin')));
@@ -365,50 +343,6 @@ Future<FfiApiResult> dniCompleteActivation({
   return Isolate.run(
       () => _toApiResult(_checkOk(_call5(lp, 'llave_dni_complete_activation',
           nif, cookiesJson, timestampAltaSms, tokenClaveMovilSms, smsPin))));
-}
-
-Future<FfiApiResult> setFirebaseToken({required String tokenPush}) async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call1(lp, 'llave_set_firebase_token', tokenPush))));
-}
-
-Future<FfiApiResult> requestSmsCode() async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call0(lp, 'llave_request_sms_code'))));
-}
-
-Future<FfiApiResult> validateSmsCode(
-    {required String timestamp, required String token, required String pin}) async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call3(lp, 'llave_validate_sms_code', timestamp, token, pin))));
-}
-
-Future<FfiApiResult> getLlaveMovil() async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call0(lp, 'llave_get_llave_movil'))));
-}
-
-Future<FfiApiResult> validateLlaveMovil({required String token}) async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call1(lp, 'llave_validate_llave_movil', token))));
-}
-
-Future<FfiApiResult> getPendingPetitions() async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call0(lp, 'llave_get_pending_petitions'))));
-}
-
-Future<FfiApiResult> listenForRequests(
-    {required int intervalSecs, required int maxAttempts}) async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_callListen(lp, 'llave_listen_for_requests', intervalSecs, maxAttempts))));
 }
 
 /// Set or clear the proxy URL for all subsequent API calls.

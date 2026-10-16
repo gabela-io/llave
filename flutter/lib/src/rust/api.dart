@@ -6,6 +6,9 @@
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `require_session_client`, `save_session_config`, `session_and_client`, `to_ffi_result`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `FfiSession`
+
 /// Initialise the Rust core storage backend.
 ///
 /// The FFI layer always uses [`MemoryStorage`]; Flutter is responsible for
@@ -15,16 +18,19 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Future<bool> initCore({String? sessionJson}) =>
     RustLib.instance.api.crateApiInitCore(sessionJson: sessionJson);
 
+/// Set the proxy URL for all subsequent API calls.
+///
+/// Supports HTTP, HTTPS, and SOCKS5 URLs (e.g. `socks5://127.0.0.1:1080`).
+/// Pass `None` to disable the proxy.
+Future<void> setProxy({String? url}) =>
+    RustLib.instance.api.crateApiSetProxy(url: url);
+
 /// Export the current session as a JSON string.
 ///
 /// Flutter should call this after operations that create or mutate the session
-/// (e.g. `activate_device`) and persist the returned JSON in
+/// (e.g. `dni_complete_activation`) and persist the returned JSON in
 /// `flutter_secure_storage`.  Returns `null` if there is no active session.
 Future<String?> exportSession() => RustLib.instance.api.crateApiExportSession();
-
-/// Activate this device with Llave.
-Future<FfiSession> activateDevice({required String nif, String? password}) =>
-    RustLib.instance.api.crateApiActivateDevice(nif: nif, password: password);
 
 /// Request a Llave PIN.
 Future<FfiPinResult> requestPin() => RustLib.instance.api.crateApiRequestPin();
@@ -37,6 +43,9 @@ Future<FfiNifCheckResult> checkNif({String? nif}) =>
     RustLib.instance.api.crateApiCheckNif(nif: nif);
 
 /// Get account data.
+///
+/// Mirrors the Android app flow: ClaveIsNifActivatedSv → ClaveCheckMyDataSv.
+/// The response contains `email`, `numTelefono`, and `nivelRegistro`.
 Future<FfiApiResult> getMyData() => RustLib.instance.api.crateApiGetMyData();
 
 /// Get operations history.
@@ -70,16 +79,40 @@ Future<bool> logout() => RustLib.instance.api.crateApiLogout();
 Future<String> validateNif({required String nif}) =>
     RustLib.instance.api.crateApiValidateNif(nif: nif);
 
-/// Authenticate using DNI/NIE weak authentication (no certificate needed)
-/// and then activate the device so that a full session is available.
+/// Encrypt the current in-memory session with a PIN.
 ///
-/// Follows the Android app's flow:
-/// 1. `AutenticaDniNieContrasteh` with `modo=json` (proves identity on www2)
-/// 2. `ClaveRequestStateSv` (registration check on www12)
-/// 3. `ClaveActivateAuthenticationSv` (device activation on www6)
+/// Returns a base64-encoded sealed blob. Flutter should store this in
+/// `flutter_secure_storage` instead of raw JSON.
+Future<String> encryptSession({required String pin}) =>
+    RustLib.instance.api.crateApiEncryptSession(pin: pin);
+
+/// Decrypt a sealed session blob and load it into the Rust core.
 ///
-/// Requires the NIF, the expiry date of the physical DNI card (DD/MM/YYYY),
-/// and the support number printed on the card.
+/// On success the session is available for all subsequent API calls.
+/// Returns an error if the PIN is wrong (AES-GCM auth fails).
+Future<bool> decryptAndLoadSession(
+        {required String sealed, required String pin}) =>
+    RustLib.instance.api
+        .crateApiDecryptAndLoadSession(sealed: sealed, pin: pin);
+
+/// Re-encrypt the current session with a new PIN.
+///
+/// Requires the old PIN to decrypt first (validates the caller knows it),
+/// then re-encrypts with the new PIN and returns the new sealed blob.
+Future<String> changeSessionPin(
+        {required String sealed,
+        required String oldPin,
+        required String newPin}) =>
+    RustLib.instance.api.crateApiChangeSessionPin(
+        sealed: sealed, oldPin: oldPin, newPin: newPin);
+
+/// Phase 1: DNI/NIE auth → registration check → request SMS code.
+///
+/// Returns the registration state, masked phone number, SMS tokens,
+/// and serialised cookies for phase 2.
+///
+/// After this call, the user must enter the SMS PIN they receive,
+/// then call [`dni_complete_activation`] with the PIN and cookies.
 Future<FfiApiResult> dniAuthenticate(
         {required String nif,
         required String fecha,
@@ -87,39 +120,22 @@ Future<FfiApiResult> dniAuthenticate(
     RustLib.instance.api
         .crateApiDniAuthenticate(nif: nif, fecha: fecha, soporte: soporte);
 
-/// Register a Firebase push notification token.
-Future<FfiApiResult> setFirebaseToken({required String tokenPush}) =>
-    RustLib.instance.api.crateApiSetFirebaseToken(tokenPush: tokenPush);
-
-/// Request an SMS verification code.
-Future<FfiApiResult> requestSmsCode() =>
-    RustLib.instance.api.crateApiRequestSmsCode();
-
-/// Validate an SMS verification code.
-Future<FfiApiResult> validateSmsCode(
-        {required String timestamp,
-        required String token,
-        required String pin}) =>
-    RustLib.instance.api
-        .crateApiValidateSmsCode(timestamp: timestamp, token: token, pin: pin);
-
-/// Get Llave Móvil token.
-Future<FfiApiResult> getLlaveMovil() =>
-    RustLib.instance.api.crateApiGetLlaveMovil();
-
-/// Validate a Llave Móvil token.
-Future<FfiApiResult> validateLlaveMovil({required String token}) =>
-    RustLib.instance.api.crateApiValidateLlaveMovil(token: token);
-
-/// Get pending market petitions.
-Future<FfiApiResult> getPendingPetitions() =>
-    RustLib.instance.api.crateApiGetPendingPetitions();
-
-/// Listen for pending authentication requests (polling loop).
-Future<FfiApiResult> listenForRequests(
-        {required BigInt intervalSecs, required int maxAttempts}) =>
-    RustLib.instance.api.crateApiListenForRequests(
-        intervalSecs: intervalSecs, maxAttempts: maxAttempts);
+/// Phase 2: Validate SMS code + activate device.
+///
+/// Takes the SMS tokens and cookies from [`dni_authenticate`] (phase 1),
+/// validates the user-entered SMS PIN, then activates the device on www6.
+Future<FfiApiResult> dniCompleteActivation(
+        {required String nif,
+        required String cookiesJson,
+        required String timestampAltaSms,
+        required String tokenClaveMovilSms,
+        required String smsPin}) =>
+    RustLib.instance.api.crateApiDniCompleteActivation(
+        nif: nif,
+        cookiesJson: cookiesJson,
+        timestampAltaSms: timestampAltaSms,
+        tokenClaveMovilSms: tokenClaveMovilSms,
+        smsPin: smsPin);
 
 /// Generic API result carrying JSON data.
 class FfiApiResult {
@@ -194,38 +210,6 @@ class FfiPinResult {
           pin == other.pin &&
           timeToLiveSeconds == other.timeToLiveSeconds &&
           nif == other.nif;
-}
-
-/// Session information returned after activation.
-class FfiSession {
-  final String deviceId;
-  final String nif;
-  final String createdAt;
-  final bool hasFirebaseToken;
-
-  const FfiSession({
-    required this.deviceId,
-    required this.nif,
-    required this.createdAt,
-    required this.hasFirebaseToken,
-  });
-
-  @override
-  int get hashCode =>
-      deviceId.hashCode ^
-      nif.hashCode ^
-      createdAt.hashCode ^
-      hasFirebaseToken.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is FfiSession &&
-          runtimeType == other.runtimeType &&
-          deviceId == other.deviceId &&
-          nif == other.nif &&
-          createdAt == other.createdAt &&
-          hasFirebaseToken == other.hasFirebaseToken;
 }
 
 /// Status of the current session.

@@ -92,7 +92,6 @@ abstract class LlaveBridge {
   /// Export the current session as JSON for secure storage persistence.
   String? exportSession();
 
-  Future<LlaveSession> activateDevice(String nif, String? password);
   Future<LlavePinResult> requestPin();
   LlaveStatus getStatus();
   Future<LlaveNifCheckResult> checkNif(String? nif);
@@ -135,21 +134,6 @@ class MockLlaveBridge implements LlaveBridge {
   String? exportSession() {
     // Mock: no real session data to export.
     return null;
-  }
-
-  @override
-  Future<LlaveSession> activateDevice(String nif, String? password) async {
-    // Simulate network delay
-    await Future<void>.delayed(const Duration(seconds: 1));
-
-    final validated = validateNif(nif);
-
-    _session = LlaveSession(
-      deviceId: 'mock-device-${DateTime.now().millisecondsSinceEpoch}',
-      nif: validated,
-      createdAt: DateTime.now().toIso8601String(),
-    );
-    return _session!;
   }
 
   @override
@@ -329,17 +313,6 @@ class RealLlaveBridge implements LlaveBridge {
 
   @override
   String? exportSession() => ffi.exportSession();
-
-  @override
-  Future<LlaveSession> activateDevice(String nif, String? password) async {
-    final s = await ffi.activateDevice(nif: nif, password: password);
-    return LlaveSession(
-      deviceId: s.deviceId,
-      nif: s.nif,
-      createdAt: s.createdAt,
-      hasFirebaseToken: s.hasFirebaseToken,
-    );
-  }
 
   @override
   Future<LlavePinResult> requestPin() async {

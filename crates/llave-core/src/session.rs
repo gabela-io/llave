@@ -11,6 +11,10 @@ pub struct Session {
     pub device_password: Zeroizing<String>,
     pub firebase_token: Option<String>,
     pub created_at: String,
+    /// Last `peticion.timestamp` seen while polling (`ClaveRequestAllOperationsSv`
+    /// cursor).  Absent in sessions saved by older versions.
+    #[serde(default)]
+    pub poll_cursor: Option<String>,
 }
 
 impl fmt::Debug for Session {
@@ -74,7 +78,15 @@ mod tests {
             device_password: Zeroizing::new("secret-pass".into()),
             firebase_token: Some("fb-token".into()),
             created_at: "2024-01-01T00:00:00Z".into(),
+            poll_cursor: None,
         }
+    }
+
+    #[test]
+    fn session_without_poll_cursor_still_loads() {
+        let json = r#"{"device_id":"d","nif":"12345678Z","device_password":"p","firebase_token":null,"created_at":"x"}"#;
+        let session: Session = serde_json::from_str(json).unwrap();
+        assert_eq!(session.poll_cursor, None);
     }
 
     #[test]

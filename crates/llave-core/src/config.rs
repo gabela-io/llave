@@ -70,6 +70,8 @@ impl Config {
 ///
 /// DNI format: 8 digits + 1 letter (e.g. `12345678Z`).
 /// NIE format: `X`/`Y`/`Z` + 7 digits + 1 letter (e.g. `X1234567L`).
+/// Special DNI (`K`/`L`) and NIE (`M`): letter + 7 digits + 1 letter,
+/// checked like `X` (prefix counts as 0).
 ///
 /// The check letter is computed as `number % 23` mapped to the sequence
 /// `TRWAGMYFPDXBNJZSQVHLCKE`.
@@ -90,7 +92,8 @@ pub fn validate_nif(nif: &str) -> Result<String> {
     // Replace NIE prefix with its numeric equivalent for the modulo calculation.
     let numeric_part: &str = match bytes[0] {
         b'0'..=b'9' => &nif[..8],
-        b'X' => &nif[1..8], // X = 0, so just the 7 digits
+        // X (NIE) and K/L/M (special DNI/NIE) = 0, so just the 7 digits
+        b'X' | b'K' | b'L' | b'M' => &nif[1..8],
         b'Y' | b'Z' => {
             // Handled below via prefix replacement
             &nif[1..8]
@@ -105,7 +108,9 @@ pub fn validate_nif(nif: &str) -> Result<String> {
 
     let number: u32 = match bytes[0] {
         b'0'..=b'9' => nif[..8].parse().map_err(|_| LlaveError::InvalidNif(nif.clone()))?,
-        b'X' => numeric_part.parse().map_err(|_| LlaveError::InvalidNif(nif.clone()))?,
+        b'X' | b'K' | b'L' | b'M' => {
+            numeric_part.parse().map_err(|_| LlaveError::InvalidNif(nif.clone()))?
+        }
         b'Y' => {
             let n: u32 = numeric_part.parse().map_err(|_| LlaveError::InvalidNif(nif.clone()))?;
             10_000_000 + n
@@ -125,6 +130,29 @@ pub fn validate_nif(nif: &str) -> Result<String> {
     Ok(nif)
 }
 
+/// Which identity-document field the DNI/NIE weak authentication expects.
+///
+/// Mirrors the app's identification screen: the field shown (and sent)
+/// depends on the document type, the other one is sent empty.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DniInput {
+    /// DNI (leading digit): validity date of the card, sent as `FECHA`.
+    ValidityDate,
+    /// DNI starting with K/L and NIE starting with M: date of birth, sent as `FECHA`.
+    BirthDate,
+    /// NIE starting with X/Y/Z: support number, sent as `SOPORTE`.
+    SupportNumber,
+}
+
+/// Field required for a normalised NIF (see [`validate_nif`]).
+pub fn required_dni_input(nif: &str) -> DniInput {
+    match nif.as_bytes().first() {
+        Some(b'K' | b'L' | b'M') => DniInput::BirthDate,
+        Some(b'X' | b'Y' | b'Z') => DniInput::SupportNumber,
+        _ => DniInput::ValidityDate,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,6 +167,54 @@ mod tests {
     fn valid_nie_x() {
         // X prefix = 0, so 1234567 % 23 = 19 → 'L'
         assert_eq!(validate_nif("X1234567L").unwrap(), "X1234567L");
+    }
+
+    #[test]
+    fn valid_special_dni_k() {
+        // K/L/M prefix = 0, like X: 1234567 % 23 = 19 → 'L'
+        assert_eq!(validate_nif("K1234567L").unwrap(), "K1234567L");
+    }
+
+    #[test]
+    fn valid_special_nie_m() {
+        assert_eq!(validate_nif("M1234567L").unwrap(), "M1234567L");
+    }
+
+    #[test]
+    fn special_prefix_wrong_check_letter() {
+        assert!(validate_nif("L1234567A").is_err());
+    }
+
+    // -- required_dni_input --
+
+    #[test]
+    fn dni_requires_validity_date() {
+        assert_eq!(required_dni_input("12345678Z"), DniInput::ValidityDate);
+    }
+
+    #[test]
+    fn dni_k_requires_birth_date() {
+        assert_eq!(required_dni_input("K1234567L"), DniInput::BirthDate);
+    }
+
+    #[test]
+    fn dni_l_requires_birth_date() {
+        assert_eq!(required_dni_input("L1234567L"), DniInput::BirthDate);
+    }
+
+    #[test]
+    fn nie_m_requires_birth_date() {
+        assert_eq!(required_dni_input("M1234567L"), DniInput::BirthDate);
+    }
+
+    #[test]
+    fn nie_x_requires_support_number() {
+        assert_eq!(required_dni_input("X1234567L"), DniInput::SupportNumber);
+    }
+
+    #[test]
+    fn nie_z_requires_support_number() {
+        assert_eq!(required_dni_input("Z1234567R"), DniInput::SupportNumber);
     }
 
     #[test]

@@ -1,19 +1,16 @@
 use crate::api::LlaveClient;
 use crate::error::Result;
 use crate::session::Session;
-use serde::Serialize;
 use parking_lot::Mutex;
 use zeroize::Zeroizing;
-use tokio::sync::broadcast;
-use tokio_util::sync::CancellationToken;
 
 /// Epoch timestamp used for the first poll — "give me everything since the
 /// beginning of time".  Format matches the AEAT APK: `yyyyMMdd'T'HHmmssSSS'Z'`.
 const EPOCH_TIMESTAMP: &str = "19700101T000000000Z";
 
-/// Last-seen poll timestamp.  After a successful poll the server returns a
-/// `timestamp` inside the `peticion` object — we store it here so the next
-/// poll only returns newer requests.
+/// Last-seen poll timestamp for this process.  It is also persisted in
+/// [`Session::poll_cursor`] so the cursor survives between CLI runs (the app
+/// keeps it in its DataStore).
 static LAST_POLL_TS: Mutex<Option<String>> = Mutex::new(None);
 
 /// Reset polling state. Call on logout/session change so stale timestamps
@@ -22,77 +19,53 @@ pub fn reset_poll_state() {
     *LAST_POLL_TS.lock() = None;
 }
 
-/// Events emitted by the authentication listener.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", content = "data")]
-pub enum AuthEvent {
-    /// Listener has started polling.
-    ListenerStarted,
-    /// A poll cycle found pending request data.
-    PendingData {
-        source: String,
-        data: serde_json::Value,
-    },
-    /// A poll cycle found no pending requests.
-    NoPending,
-    /// An error occurred during polling (non-fatal).
-    PollError { message: String },
-    /// Listener has stopped.
-    ListenerStopped,
-    /// Polling timed out after max attempts.
-    Timeout { message: String },
+/// Cursor precedence: this process's last value, then the persisted one,
+/// then the epoch.
+fn pick_cursor<'a>(in_memory: Option<&'a str>, stored: Option<&'a str>) -> &'a str {
+    in_memory.or(stored).unwrap_or(EPOCH_TIMESTAMP)
 }
 
-/// Full activation flow: starting -> check NIF -> activate.
-pub async fn activate_device(
-    client: &LlaveClient,
-    nif: &str,
-    device_id: &str,
-    device_password: &str,
-) -> Result<Session> {
-    tracing::info!("activating device");
-    let starting = client.clave_starting(device_id, nif, "").await?;
-    if starting.status != "OK" {
-        return Err(crate::error::LlaveError::Api {
-            status: starting.status,
-            code: starting.codigo_error.unwrap_or_default(),
-            message: starting.mensaje.unwrap_or_else(|| "Starting failed".into()),
-        });
+/// Cursor to send as `timestamp` in `ClaveRequestAllOperationsSv`.
+fn current_cursor(session: &Session) -> String {
+    let in_memory = LAST_POLL_TS.lock().clone();
+    pick_cursor(in_memory.as_deref(), session.poll_cursor.as_deref()).to_string()
+}
+
+/// `respuesta.peticion.timestamp` — the only timestamp the app uses as cursor.
+fn peticion_timestamp(respuesta: &serde_json::Value) -> Option<&str> {
+    respuesta.get("peticion")?.get("timestamp")?.as_str()
+}
+
+/// Timestamps share the fixed `yyyyMMdd'T'HHmmssSSS'Z'` format, so string
+/// order is chronological.  The app only shows requests not older than the
+/// stored cursor.
+fn is_stale(peticion_ts: &str, cursor: &str) -> bool {
+    peticion_ts < cursor
+}
+
+/// Remove `respuesta.peticion` when it is older than `cursor`.
+fn drop_stale_peticion(respuesta: &mut serde_json::Value, cursor: &str) {
+    if peticion_timestamp(respuesta).is_some_and(|ts| is_stale(ts, cursor)) {
+        if let Some(obj) = respuesta.as_object_mut() {
+            obj.insert("peticion".into(), serde_json::Value::Null);
+        }
     }
+}
 
-    let activated = client.clave_is_nif_activated(device_id, nif).await?;
-    tracing::debug!(nif_status = %activated.status, "nif check");
-
-    let activate_resp = client.activate_authentication(device_password, "").await?;
-    let activate_data = activate_resp.respuesta.ok_or_else(|| crate::error::LlaveError::Api {
-        status: "OK".into(),
-        code: String::new(),
-        message: "Empty activation response".into(),
-    })?;
-
-    // The client-generated UUID IS the device password. The server may echo
-    // it back as `user_password`, or may not return it at all. The `token`
-    // field is a separate session/push token, NOT the device credential.
-    let saved_password = activate_data.user_password
-        .unwrap_or_else(|| device_password.to_string());
-    tracing::info!(
-        server_device_id = activate_data.device_id.as_deref().unwrap_or("none"),
-        saved_password_len = saved_password.len(),
-        server_token_present = activate_data.token.is_some(),
-        "activation response"
-    );
-    let session = Session {
-        device_id: activate_data.device_id.unwrap_or_else(|| device_id.to_string()),
-        nif: nif.to_string(),
-        device_password: Zeroizing::new(saved_password),
-        firebase_token: None,
-        created_at: chrono::Utc::now().to_rfc3339(),
+/// Advance the cursor from a response and persist it in the stored session.
+/// Persistence failures are logged, not fatal.
+fn record_cursor(respuesta: &serde_json::Value) {
+    let Some(ts) = peticion_timestamp(respuesta) else {
+        return;
     };
-
-    session.save()?;
-    tracing::info!("device activated");
-
-    Ok(session)
+    *LAST_POLL_TS.lock() = Some(ts.to_string());
+    let persisted = Session::load().and_then(|mut stored| {
+        stored.poll_cursor = Some(ts.to_string());
+        stored.save()
+    });
+    if let Err(e) = persisted {
+        tracing::warn!(err = %e, "could not persist poll cursor");
+    }
 }
 
 /// Request a Llave PIN using saved session credentials.
@@ -100,9 +73,14 @@ pub async fn activate_device(
 /// Mirrors the original app's full flow:
 /// 1. `ClaveStartingSv` — establish device session (app startup call).
 /// 2. `ClaveRequestAllOperationsSv` — validate device registration and check
-///    for an existing active PIN.  Error codes 105/109 indicate the device
-///    is not properly registered.
-/// 3. `ClaveRequestPinSv` — generate or retrieve the PIN.
+///    for a pending PIN (`respuesta.pin`).  Error codes 105/109/416 indicate
+///    the device is not properly registered.
+/// 3. `ClaveRequestPinSv` — reveal the pending PIN.  The app never calls this
+///    without a pending PIN; the PIN request itself is started on the web.
+///
+/// Returns `(pin, time_to_live_seconds)`.  Fails with
+/// [`LlaveError::NoPendingPin`](crate::error::LlaveError::NoPendingPin) when
+/// there is no pending PIN to reveal.
 pub async fn request_pin(client: &LlaveClient, session: &Session) -> Result<(String, String)> {
     tracing::info!(
         device_id = %session.device_id,
@@ -117,6 +95,13 @@ pub async fn request_pin(client: &LlaveClient, session: &Session) -> Result<(Str
                 code = resp.codigo_error.as_deref().unwrap_or(""),
                 "ClaveStartingSv before PIN request"
             );
+            if resp.status == "OK" {
+                ensure_app_movil_cookie(client).await;
+            } else {
+                // The app stops (and wipes on 105/109) when Starting reports
+                // an inactive device.
+                check_device_active(resp.codigo_error.as_deref(), resp.mensaje.as_deref())?;
+            }
         }
         Err(e) => {
             tracing::warn!(err = %e, "ClaveStartingSv failed (continuing anyway)");
@@ -124,74 +109,54 @@ pub async fn request_pin(client: &LlaveClient, session: &Session) -> Result<(Str
     }
 
     // Step 2: Call ClaveRequestAllOperationsSv to validate the device session
-    // and check for existing PINs.  The original app does this when the device
-    // active screen loads (consultarAEATyGISS).  Error codes 105/109 mean the
-    // device is not properly registered on the server.
-    let poll_timestamp = LAST_POLL_TS
-        .lock()
-        .clone()
-        .unwrap_or_else(|| EPOCH_TIMESTAMP.to_string());
+    // and check for a pending PIN.  The original app does this when the
+    // device active screen loads (consultarClaveMovilOPin).
+    let poll_timestamp = current_cursor(session);
 
-    match client
+    let ops = client
         .request_all_operations(&session.device_id, &session.nif, &poll_timestamp)
-        .await
-    {
-        Ok(ops) => {
-            tracing::info!(
-                status = %ops.status,
-                code = ops.codigo_error.as_deref().unwrap_or(""),
-                has_respuesta = ops.respuesta.is_some(),
-                "ClaveRequestAllOperationsSv before PIN"
-            );
+        .await?;
+    tracing::info!(
+        status = %ops.status,
+        code = ops.codigo_error.as_deref().unwrap_or(""),
+        has_respuesta = ops.respuesta.is_some(),
+        "ClaveRequestAllOperationsSv before PIN"
+    );
 
-            // Check for device registration errors.
-            let code = ops.codigo_error.as_deref().unwrap_or("");
-            if code == "105" || code == "109" {
-                return Err(crate::error::LlaveError::Api {
-                    status: ops.status,
-                    code: code.to_string(),
-                    message: ops.mensaje.unwrap_or_else(|| {
-                        "Device not properly registered (re-activate required)".into()
-                    }),
-                });
-            }
+    // Device registration errors (the app shows its "not active device" dialog).
+    check_device_active(ops.codigo_error.as_deref(), ops.mensaje.as_deref())?;
 
-            // Log the response payload for debugging.
-            if let Some(ref resp) = ops.respuesta {
-                let has_pin = resp.get("pin").map(|v| !v.is_null()).unwrap_or(false);
-                let has_peticion = resp.get("peticion").map(|v| !v.is_null()).unwrap_or(false);
-                tracing::info!(
-                    has_pin = has_pin,
-                    has_peticion = has_peticion,
-                    resp_preview = %serde_json::to_string(resp).unwrap_or_default(),
-                    "AllOperations response payload"
-                );
+    let respuesta = ops.into_result()?;
+    let has_pin = has_pending_pin(&respuesta);
+    tracing::info!(
+        has_pin = has_pin,
+        has_peticion = respuesta.get("peticion").is_some_and(|v| !v.is_null()),
+        "AllOperations response payload"
+    );
 
-                // Save timestamp for next poll.
-                if let Some(ts) = resp
-                    .get("peticion")
-                    .and_then(|p| p.get("timestamp"))
-                    .and_then(|t| t.as_str())
-                {
-                    *LAST_POLL_TS.lock() = Some(ts.to_string());
-                }
-            }
-        }
-        Err(e) => {
-            // Non-fatal: log and continue to PIN request.
-            tracing::warn!(err = %e, "ClaveRequestAllOperationsSv failed (continuing anyway)");
-        }
+    record_cursor(&respuesta);
+
+    if !has_pin {
+        return Err(crate::error::LlaveError::NoPendingPin);
     }
 
-    // Step 3: Request the PIN.
+    // Step 3: Reveal the pending PIN.
     let resp = client
         .request_pin(&session.device_id, &session.device_password, &session.nif)
         .await?;
 
+    // 307 = "no valid PIN available" (the PIN expired between both calls).
+    if resp.codigo_error.as_deref() == Some("307") {
+        return Err(crate::error::LlaveError::NoPendingPin);
+    }
     let pin_data = resp.into_result()?;
     let pin = pin_data.pin.unwrap_or_default();
-    let ttl = pin_data.time_to_live.unwrap_or_default();
-    tracing::info!(ttl = %ttl, "pin generated");
+    let ttl_ms = pin_data.time_to_live.unwrap_or_default();
+    let ttl = ttl_ms_to_seconds(&ttl_ms).unwrap_or_else(|| {
+        tracing::warn!(ttl_ms = %ttl_ms, "unparseable timeToLive");
+        String::new()
+    });
+    tracing::info!(ttl_seconds = %ttl, "pin revealed");
 
     Ok((pin, ttl))
 }
@@ -206,8 +171,9 @@ pub async fn authenticate_dni(
     nif: &str,
     fecha: &str,
     soporte: &str,
+    challenge: Option<crate::api::DniChallenge>,
 ) -> Result<()> {
-    client.authenticate_dni_nie(nif, fecha, soporte).await
+    client.authenticate_dni_nie(nif, fecha, soporte, challenge).await
 }
 
 /// Result of phase 1: DNI auth + registration check + SMS request.
@@ -232,21 +198,30 @@ pub struct DniSmsPhase1 {
 /// Returns [`DniSmsPhase1`] with the SMS metadata and serialised cookies.
 /// The caller should display the masked phone number to the user, collect
 /// the SMS PIN, then call [`dni_validate_and_activate`] with the PIN.
+///
+/// On [`LlaveError::DniBirthDateRequired`](crate::error::LlaveError::DniBirthDateRequired)
+/// call again with the date of birth as `fecha`, an empty `soporte` and the
+/// returned challenge.
 pub async fn dni_request_sms(
     client: &LlaveClient,
     nif: &str,
     fecha: &str,
     soporte: &str,
+    challenge: Option<crate::api::DniChallenge>,
 ) -> Result<DniSmsPhase1> {
-    // Step 0: Call ClaveStartingSv on www2 to establish device context.
-    // The Android app calls this at app launch (BEFORE DNI auth).
-    // Note: LlaveStartingSv (older endpoint) returned 404, but ClaveStartingSv
-    // (the actual endpoint the Android app uses) might work.
-    let device_id = uuid::Uuid::new_v4().to_string();
-    tracing::info!(device_id = %device_id, "calling ClaveStartingSv (www2) to establish device session");
-    match client.clave_starting(&device_id, nif, "").await {
+    // Like the app entering its identification screen: start from a clean
+    // cookie jar (resubmissions with a challenge keep the current one).
+    if challenge.is_none() {
+        client.clear_session_cookies();
+    }
+
+    // Step 0: ClaveStartingSv on www2, as the app does at launch (before DNI
+    // auth).  An unactivated app has no device id yet and sends it empty.
+    tracing::info!("calling ClaveStartingSv (www2) to establish device session");
+    match client.clave_starting("", nif, "").await {
         Ok(resp) if resp.status == "OK" => {
             tracing::info!("ClaveStartingSv succeeded");
+            ensure_app_movil_cookie(client).await;
         }
         Ok(resp) => {
             tracing::warn!(
@@ -263,17 +238,19 @@ pub async fn dni_request_sms(
 
     // Step 1: DNI/NIE auth (establishes session cookies).
     tracing::info!("authenticating via DNI/NIE");
-    client.authenticate_dni_nie(nif, fecha, soporte).await?;
-    {
-        let c = client.export_cookies();
-        let parsed: Vec<(String, String)> = serde_json::from_str(&c).unwrap_or_default();
-        let names: Vec<&str> = parsed.iter().map(|(k, _)| k.as_str()).collect();
-        tracing::info!(cookie_names = ?names, "DNI/NIE auth complete — cookie jar");
-    }
+    client.authenticate_dni_nie(nif, fecha, soporte, challenge).await?;
 
     // Step 2: Check registration state (uses session cookies from step 1).
     tracing::info!("checking registration state");
-    let state_resp = client.clave_request_state().await?;
+    let mut state_resp = client.clave_request_state().await?;
+    if needs_app_movil_retry(&state_resp.status, state_resp.codigo_error.as_deref()) {
+        // The app re-requests the `appmovil` cookie and retries once.
+        tracing::info!("ClaveRequestStateSv returned 987 — refreshing appmovil cookie and retrying");
+        if let Err(e) = client.set_cookie_app_movil().await {
+            tracing::warn!(err = %e, "SetCookieAppMovil failed before retry");
+        }
+        state_resp = client.clave_request_state().await?;
+    }
     if state_resp.status != "OK" {
         return Err(crate::error::LlaveError::Api {
             status: state_resp.status,
@@ -292,12 +269,7 @@ pub async fn dni_request_sms(
         nivel = state.nivel_registro.as_deref().unwrap_or("?"),
         "registration state"
     );
-    {
-        let c = client.export_cookies();
-        let parsed: Vec<(String, String)> = serde_json::from_str(&c).unwrap_or_default();
-        let names: Vec<&str> = parsed.iter().map(|(k, _)| k.as_str()).collect();
-        tracing::info!(cookie_names = ?names, "after ClaveRequestStateSv — cookie jar");
-    }
+    registration_gate(&state)?;
 
     // Step 3: Request SMS code (triggers SMS to user's registered phone).
     tracing::info!("requesting SMS verification code");
@@ -381,16 +353,7 @@ pub async fn dni_validate_and_activate(
         message: "Empty activation response".into(),
     })?;
 
-    let device_id = activate_data.device_id.unwrap_or_default();
-    let saved_password = activate_data.user_password
-        .unwrap_or_else(|| device_password.to_string());
-    let session = Session {
-        device_id,
-        nif: nif.to_string(),
-        device_password: Zeroizing::new(saved_password),
-        firebase_token: None,
-        created_at: chrono::Utc::now().to_rfc3339(),
-    };
+    let session = session_from_activation(activate_data, nif, device_password)?;
     session.save()?;
     tracing::info!("device activated via DNI/NIE + SMS flow");
 
@@ -408,12 +371,7 @@ pub async fn poll_pending_requests(
     client: &LlaveClient,
     session: &Session,
 ) -> Result<serde_json::Value> {
-    // Use saved timestamp from previous successful poll, or epoch for first call.
-    let timestamp = LAST_POLL_TS
-        .lock()
-        .clone()
-        .unwrap_or_else(|| EPOCH_TIMESTAMP.to_string());
-
+    let timestamp = current_cursor(session);
     tracing::debug!(timestamp = %timestamp, "polling pending requests");
 
     let operations = client
@@ -424,6 +382,7 @@ pub async fn poll_pending_requests(
     // Propagate as a proper error so callers can distinguish "no data" from
     // "got data with null fields".
     if operations.status != "OK" {
+        check_device_active(operations.codigo_error.as_deref(), operations.mensaje.as_deref())?;
         return Err(crate::LlaveError::Api {
             status: operations.status,
             code: operations.codigo_error.unwrap_or_default(),
@@ -433,22 +392,17 @@ pub async fn poll_pending_requests(
         });
     }
 
-    // On success, save the peticion timestamp for next poll so the server
-    // only returns newer requests.
-    if let Some(ref resp) = operations.respuesta {
-        if let Some(ts) = resp
-            .get("peticion")
-            .and_then(|p| p.get("timestamp"))
-            .and_then(|t| t.as_str())
-        {
-            *LAST_POLL_TS.lock() = Some(ts.to_string());
-        }
+    // Like the app: ignore a request older than the cursor, then advance it.
+    let mut respuesta = operations.respuesta;
+    if let Some(resp) = respuesta.as_mut() {
+        drop_stale_peticion(resp, &timestamp);
+        record_cursor(resp);
     }
 
     Ok(serde_json::json!({
         "source": "all_operations",
         "status": operations.status,
-        "data": operations.respuesta,
+        "data": respuesta,
     }))
 }
 
@@ -510,6 +464,65 @@ pub async fn confirm_authentication(
     }))
 }
 
+/// Deep link the app registers for QR codes (`AndroidManifest`, path prefix).
+const QR_DEEP_LINK_PREFIX: &str = "https://sede.agenciatributaria.gob.es/appclave/qrscan";
+
+/// Accept either the raw QR text or the app's deep link
+/// (`…/appclave/qrscan?qrcode=<value>`).  Like the app, the value after
+/// `qrcode=` is taken from the encoded query without percent-decoding.
+pub fn qr_value_from_input(input: &str) -> &str {
+    let input = input.trim();
+    if input.starts_with(QR_DEEP_LINK_PREFIX) {
+        if let Some((_, value)) = input.split_once("qrcode=") {
+            return value;
+        }
+    }
+    input
+}
+
+/// Mirror the app's QR check: leading `"0"`, Base64 remainder whose decoded
+/// length is a multiple of 8, and at least 152 characters overall.
+pub fn is_valid_qr(value: &str) -> bool {
+    use base64::engine::{general_purpose, DecodePaddingMode, GeneralPurpose};
+    use base64::{alphabet, Engine};
+    // Android's `Base64.DEFAULT` decoder does not insist on padding.
+    const LENIENT: GeneralPurpose = GeneralPurpose::new(
+        &alphabet::STANDARD,
+        general_purpose::PAD.with_decode_padding_mode(DecodePaddingMode::Indifferent),
+    );
+
+    let Some(payload) = value.strip_prefix('0') else {
+        return false;
+    };
+    value.len() >= 152
+        && LENIENT
+            .decode(payload)
+            .is_ok_and(|bytes| bytes.len() % 8 == 0)
+}
+
+/// Authenticate a QR code shown by the AEAT website (`ClaveMovilQrSv`).
+///
+/// Validates the code like the app, fails on KO, and advances the polling
+/// cursor from the returned `peticion`.  The returned request must then be
+/// confirmed or rejected like any pending request.
+pub async fn qr_authenticate(
+    client: &LlaveClient,
+    session: &Session,
+    input: &str,
+) -> Result<serde_json::Value> {
+    let value = qr_value_from_input(input);
+    if !is_valid_qr(value) {
+        return Err(crate::LlaveError::InvalidQr);
+    }
+
+    let resp = client
+        .qr_authenticate(&session.device_id, &session.nif, value)
+        .await?;
+    let respuesta = resp.into_result()?;
+    record_cursor(&respuesta);
+    Ok(respuesta)
+}
+
 /// Reject a pending Llave Móvil authentication request.
 ///
 /// Note: unlike polling, the official app does **not** call `ClaveStartingSv`
@@ -547,38 +560,32 @@ pub async fn reject_authentication(
 }
 
 /// Continuously poll for pending requests (blocking loop for CLI).
+///
+/// `max_attempts == 0` polls until a request arrives.
 pub async fn listen_for_requests(
     client: &LlaveClient,
     session: &Session,
     interval_secs: u64,
     max_attempts: u32,
 ) -> Result<serde_json::Value> {
-    for attempt in 1..=max_attempts {
+    let mut attempt: u32 = 1;
+    while attempt_allowed(attempt, max_attempts) {
         tracing::debug!(attempt = attempt, max = max_attempts, "polling");
 
         match poll_pending_requests(client, session).await {
             Ok(result) => {
-                if let Some(data) = result.get("data") {
-                    if !data.is_null() {
-                        let has_content = match data {
-                            serde_json::Value::Object(m) => !m.is_empty(),
-                            serde_json::Value::Array(a) => !a.is_empty(),
-                            serde_json::Value::String(s) => !s.is_empty(),
-                            _ => true,
-                        };
-                        if has_content {
-                            return Ok(result);
-                        }
-                    }
+                if result.get("data").is_some_and(has_pending_request) {
+                    return Ok(result);
                 }
             }
-            Err(crate::LlaveError::Api { ref code, .. }) if is_no_pending_code(code) => {
+            Err(crate::LlaveError::Api { ref code, .. }) if is_no_pending_code(code) || is_retry_later_code(code) => {
                 tracing::debug!(code = %code, "no pending operations, continuing poll");
             }
             Err(e) => return Err(e),
         }
 
-        if attempt < max_attempts {
+        attempt = attempt.saturating_add(1);
+        if attempt_allowed(attempt, max_attempts) {
             tokio::time::sleep(std::time::Duration::from_secs(interval_secs)).await;
         }
     }
@@ -589,126 +596,610 @@ pub async fn listen_for_requests(
     }))
 }
 
+/// `resultado` filter of `ClaveOperationsHistorySv`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HistoryResult {
+    /// Confirmed and rejected requests.
+    All,
+    /// Confirmed requests only — the app's default filter.
+    #[default]
+    Confirmed,
+    /// Rejected requests only.
+    Rejected,
+}
+
+impl HistoryResult {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::All => "00",
+            Self::Confirmed => "01",
+            Self::Rejected => "10",
+        }
+    }
+}
+
+/// The app shows the last week by default.
+pub const HISTORY_DEFAULT_DAYS: i64 = 7;
+
+/// `(fecha_desde, fecha_hasta)` in the app's `dd/MM/yyyy` format.
+fn history_range(today: chrono::NaiveDate, days: i64) -> (String, String) {
+    let desde = today - chrono::Duration::days(days);
+    (
+        desde.format("%d/%m/%Y").to_string(),
+        today.format("%d/%m/%Y").to_string(),
+    )
+}
+
+/// Operations history for the last `days` days (`ClaveOperationsHistorySv`).
+pub async fn history(
+    client: &LlaveClient,
+    session: &Session,
+    days: i64,
+    resultado: HistoryResult,
+) -> Result<Vec<crate::api::OperationEntry>> {
+    let (desde, hasta) = history_range(chrono::Local::now().date_naive(), days);
+    let resp = client
+        .operations_history(
+            &session.device_id,
+            &session.device_password,
+            &session.nif,
+            &desde,
+            &hasta,
+            resultado.code(),
+        )
+        .await?;
+    check_device_active(resp.codigo_error.as_deref(), resp.mensaje.as_deref())?;
+    resp.into_result()
+}
+
+/// Account data, like the app: `ClaveIsNifActivatedSv` must be OK before
+/// `ClaveCheckMyDataSv`.
+pub async fn my_data(
+    client: &LlaveClient,
+    session: &Session,
+) -> Result<crate::api::ClaveCheckMyDataResponse> {
+    let activated = client
+        .clave_is_nif_activated(&session.device_id, &session.nif)
+        .await?;
+    if activated.status != "OK" {
+        check_device_active(activated.codigo_error.as_deref(), activated.mensaje.as_deref())?;
+        activated.into_result()?;
+    }
+    let resp = client
+        .clave_check_my_data(&session.device_id, &session.nif)
+        .await?;
+    check_device_active(resp.codigo_error.as_deref(), resp.mensaje.as_deref())?;
+    resp.into_result()
+}
+
+/// Deactivate this device (`ClaveDesactivateAuthSv`).
+///
+/// Like the app, the local session is deleted only when the server confirms
+/// (or reports the device as already revoked, 105/109); on any other KO the
+/// credentials are kept so the user can retry.
+pub async fn deactivate(client: &LlaveClient, session: &Session) -> Result<()> {
+    let resp = client
+        .deactivate_authentication(&session.device_id, &session.nif)
+        .await?;
+    if resp.status != "OK" {
+        check_device_active(resp.codigo_error.as_deref(), resp.mensaje.as_deref())?;
+        resp.into_result()?;
+        return Ok(());
+    }
+    Session::delete()
+}
+
+/// Classify device-status codes.  `Some(true)`: device revoked, the app
+/// wipes local credentials (105/109).  `Some(false)`: device not active,
+/// no wipe (416).  `None`: not a device-status error.
+fn device_inactive(code: Option<&str>) -> Option<bool> {
+    match code? {
+        "105" | "109" => Some(true),
+        "416" => Some(false),
+        _ => None,
+    }
+}
+
+/// Fail with [`LlaveError::DeviceNotActive`](crate::LlaveError::DeviceNotActive)
+/// on a device-status code, deleting the local session first when the app
+/// would (105/109).
+fn check_device_active(code: Option<&str>, message: Option<&str>) -> Result<()> {
+    let Some(wipe) = device_inactive(code) else {
+        return Ok(());
+    };
+    if wipe {
+        tracing::warn!(code = code.unwrap_or_default(), "device revoked by server — deleting local session");
+        if let Err(e) = Session::delete() {
+            tracing::warn!(err = %e, "could not delete local session");
+        }
+    }
+    Err(crate::LlaveError::DeviceNotActive {
+        code: code.unwrap_or_default().to_string(),
+        message: message.unwrap_or_default().to_string(),
+    })
+}
+
+/// The app only requests the SMS for a registered user with a phone.
+fn registration_gate(state: &crate::api::ClaveRequestStateResponse) -> Result<()> {
+    if state.registrado.as_deref() != Some("true") {
+        return Err(crate::LlaveError::NotRegistered);
+    }
+    if state.telefono.as_deref() != Some("S") {
+        return Err(crate::LlaveError::NoRegisteredPhone);
+    }
+    Ok(())
+}
+
+/// Code 407: the app asks the user to wait a few seconds and retry.
+fn is_retry_later_code(code: &str) -> bool {
+    code == "407"
+}
+
+/// Build the session from a `ClaveActivateAuthenticationSv` payload.
+///
+/// The server assigns `device_id` (required, like the app's `checkNotNull`);
+/// the device password is always the locally generated one — the response
+/// carries only `device_id`, `nif` and `token`.
+fn session_from_activation(
+    activation: crate::api::ActivateResponse,
+    nif: &str,
+    device_password: &str,
+) -> Result<Session> {
+    let device_id = activation
+        .device_id
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| crate::error::LlaveError::Api {
+            status: "OK".into(),
+            code: String::new(),
+            message: "Activation response has no device_id".into(),
+        })?;
+    // The app stores the NIF returned by the server.
+    let nif = activation
+        .nif
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| nif.to_string());
+    Ok(Session {
+        device_id,
+        nif,
+        device_password: Zeroizing::new(device_password.to_string()),
+        firebase_token: None,
+        created_at: chrono::Utc::now().to_rfc3339(),
+        poll_cursor: None,
+    })
+}
+
+/// After a successful `ClaveStartingSv`, request the `appmovil` cookie if the
+/// server did not set it — mirrors the app.  Non-fatal: failures are logged.
+async fn ensure_app_movil_cookie(client: &LlaveClient) {
+    if client.has_cookie("appmovil") {
+        return;
+    }
+    match client.set_cookie_app_movil().await {
+        Ok(resp) => tracing::info!(
+            status = %resp.status,
+            has_appmovil = client.has_cookie("appmovil"),
+            "SetCookieAppMovil"
+        ),
+        Err(e) => tracing::warn!(err = %e, "SetCookieAppMovil failed (continuing anyway)"),
+    }
+}
+
+/// `ClaveRequestStateSv` KO with code 987: the app calls `SetCookieAppMovil`
+/// and retries once.  (Meaning of 987 is not documented; inferred to be a
+/// missing/invalid `appmovil` cookie.)
+fn needs_app_movil_retry(status: &str, code: Option<&str>) -> bool {
+    status == "KO" && code == Some("987")
+}
+
 /// Error codes that indicate "no pending operations" rather than a real failure.
+///
+/// `40` is the code the app maps to its "no request" screen; `205` was
+/// observed empirically when polling without pending requests.
 fn is_no_pending_code(code: &str) -> bool {
-    code == "205"
+    matches!(code, "40" | "205")
+}
+
+/// Whether a polled `respuesta` contains an actionable authentication request.
+///
+/// Mirrors the app, which only shows a request when
+/// `peticion.tokenClaveMovil` is set; a pending PIN or a bare `timestamp`
+/// is not a request.
+fn has_pending_request(data: &serde_json::Value) -> bool {
+    data.get("peticion")
+        .and_then(|p| p.get("tokenClaveMovil"))
+        .and_then(|t| t.as_str())
+        .is_some_and(|t| !t.is_empty())
+}
+
+/// Whether polling attempt number `attempt` (1-based) may run.
+/// `max_attempts == 0` means unlimited.
+fn attempt_allowed(attempt: u32, max_attempts: u32) -> bool {
+    max_attempts == 0 || attempt <= max_attempts
+}
+
+/// Whether a `ClaveRequestAllOperationsSv` payload announces a pending PIN.
+///
+/// The app only reveals a PIN (via `ClaveRequestPinSv`) when
+/// `respuesta.pin` is present; otherwise it shows "no pending PIN".
+fn has_pending_pin(respuesta: &serde_json::Value) -> bool {
+    respuesta.get("pin").is_some_and(|p| p.is_object())
+}
+
+/// Convert the server's `timeToLive` (milliseconds) to whole seconds.
+///
+/// The app feeds this value straight into `CountDownTimer(millisInFuture)`.
+fn ttl_ms_to_seconds(ttl_ms: &str) -> Option<String> {
+    ttl_ms
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(|ms| (ms / 1000).to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // -- has_pending_pin --
+
     #[test]
-    fn auth_event_listener_started_serde() {
-        let event = AuthEvent::ListenerStarted;
-        let json = serde_json::to_value(&event).unwrap();
-        assert_eq!(json["type"], "ListenerStarted");
-        assert!(json.get("data").is_none());
+    fn pending_pin_present() {
+        let resp = serde_json::json!({
+            "pin": {"timeToLive": "120000", "timestamp": "20261015T120000000Z"},
+            "peticion": null,
+        });
+        assert!(has_pending_pin(&resp));
     }
 
     #[test]
-    fn auth_event_listener_stopped_serde() {
-        let event = AuthEvent::ListenerStopped;
-        let json = serde_json::to_value(&event).unwrap();
-        assert_eq!(json["type"], "ListenerStopped");
-        assert!(json.get("data").is_none());
+    fn pending_pin_null() {
+        let resp = serde_json::json!({"pin": null, "peticion": null});
+        assert!(!has_pending_pin(&resp));
     }
 
     #[test]
-    fn auth_event_no_pending_serde() {
-        let event = AuthEvent::NoPending;
-        let json = serde_json::to_value(&event).unwrap();
-        assert_eq!(json["type"], "NoPending");
-        assert!(json.get("data").is_none());
+    fn pending_pin_missing() {
+        let resp = serde_json::json!({"timestamp": "20261015T120000000Z"});
+        assert!(!has_pending_pin(&resp));
+    }
+
+    // -- history filters --
+
+    #[test]
+    fn history_result_codes_match_app() {
+        assert_eq!(
+            [HistoryResult::All, HistoryResult::Confirmed, HistoryResult::Rejected].map(HistoryResult::code),
+            ["00", "01", "10"]
+        );
     }
 
     #[test]
-    fn auth_event_pending_data_serde() {
-        let event = AuthEvent::PendingData {
-            source: "all_operations".into(),
-            data: serde_json::json!({"key": "value"}),
-        };
-        let json = serde_json::to_value(&event).unwrap();
-        assert_eq!(json["type"], "PendingData");
-        assert_eq!(json["data"]["source"], "all_operations");
-        assert_eq!(json["data"]["data"]["key"], "value");
+    fn history_default_is_confirmed_only() {
+        assert_eq!(HistoryResult::default(), HistoryResult::Confirmed);
     }
 
     #[test]
-    fn auth_event_poll_error_serde() {
-        let event = AuthEvent::PollError {
-            message: "connection timed out".into(),
-        };
-        let json = serde_json::to_value(&event).unwrap();
-        assert_eq!(json["type"], "PollError");
-        assert_eq!(json["data"]["message"], "connection timed out");
+    fn history_default_range_is_last_week() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 16).unwrap();
+        assert_eq!(
+            history_range(today, HISTORY_DEFAULT_DAYS),
+            ("09/10/2026".to_string(), "16/10/2026".to_string())
+        );
+    }
+
+    // -- device status --
+
+    #[test]
+    fn device_code_105_is_inactive_and_wipes() {
+        assert_eq!(device_inactive(Some("105")), Some(true));
     }
 
     #[test]
-    fn auth_event_timeout_serde() {
-        let event = AuthEvent::Timeout {
-            message: "max attempts reached".into(),
-        };
-        let json = serde_json::to_value(&event).unwrap();
-        assert_eq!(json["type"], "Timeout");
-        assert_eq!(json["data"]["message"], "max attempts reached");
+    fn device_code_109_is_inactive_and_wipes() {
+        assert_eq!(device_inactive(Some("109")), Some(true));
     }
-}
 
-/// Run an event-driven listener that sends events to a broadcast channel.
-/// Used by the web server for SSE streaming.
-pub async fn run_listener(
-    client: &LlaveClient,
-    session: &Session,
-    interval: std::time::Duration,
-    shutdown: CancellationToken,
-    tx: broadcast::Sender<AuthEvent>,
-) {
-    tracing::info!("listener started");
-    let _ = tx.send(AuthEvent::ListenerStarted);
+    #[test]
+    fn device_code_416_is_inactive_without_wipe() {
+        assert_eq!(device_inactive(Some("416")), Some(false));
+    }
 
-    loop {
-        tokio::select! {
-            _ = shutdown.cancelled() => {
-                tracing::info!("listener stopped");
-                let _ = tx.send(AuthEvent::ListenerStopped);
-                break;
-            }
-            _ = tokio::time::sleep(interval) => {
-                match poll_pending_requests(client, session).await {
-                    Ok(result) => {
-                        let has_data = result.get("data")
-                            .map(|d| !d.is_null() && match d {
-                                serde_json::Value::Object(m) => !m.is_empty(),
-                                serde_json::Value::Array(a) => !a.is_empty(),
-                                serde_json::Value::String(s) => !s.is_empty(),
-                                _ => true,
-                            })
-                            .unwrap_or(false);
+    #[test]
+    fn device_other_codes_are_not_device_errors() {
+        assert_eq!(device_inactive(Some("40")), None);
+    }
 
-                        if has_data {
-                            let _ = tx.send(AuthEvent::PendingData {
-                                source: result.get("source")
-                                    .and_then(|s| s.as_str())
-                                    .unwrap_or("unknown")
-                                    .to_string(),
-                                data: result.get("data").cloned().unwrap_or(serde_json::Value::Null),
-                            });
-                        } else {
-                            let _ = tx.send(AuthEvent::NoPending);
-                        }
-                    }
-                    Err(crate::LlaveError::Api { ref code, .. }) if is_no_pending_code(code) => {
-                        let _ = tx.send(AuthEvent::NoPending);
-                    }
-                    Err(e) => {
-                        tracing::warn!(err = %e, "poll error");
-                        let _ = tx.send(AuthEvent::PollError {
-                            message: e.to_string(),
-                        });
-                    }
-                }
-            }
+    // -- registration gate --
+
+    fn state(registrado: &str, telefono: &str) -> crate::api::ClaveRequestStateResponse {
+        crate::api::ClaveRequestStateResponse {
+            registrado: Some(registrado.into()),
+            nivel_registro: None,
+            telefono: Some(telefono.into()),
         }
+    }
+
+    #[test]
+    fn registration_gate_passes_registered_with_phone() {
+        assert!(registration_gate(&state("true", "S")).is_ok());
+    }
+
+    #[test]
+    fn registration_gate_rejects_unregistered() {
+        assert!(matches!(
+            registration_gate(&state("false", "S")),
+            Err(crate::LlaveError::NotRegistered)
+        ));
+    }
+
+    #[test]
+    fn registration_gate_rejects_missing_phone() {
+        assert!(matches!(
+            registration_gate(&state("true", "N")),
+            Err(crate::LlaveError::NoRegisteredPhone)
+        ));
+    }
+
+    // -- retry-later code --
+
+    #[test]
+    fn code_407_means_retry_later() {
+        assert!(is_retry_later_code("407"));
+    }
+
+    // -- QR --
+
+    /// "0" + Base64 of `n` bytes, like the codes the AEAT site shows.
+    fn qr_with_payload(n: usize) -> String {
+        use base64::Engine;
+        format!("0{}", base64::engine::general_purpose::STANDARD.encode(vec![7u8; n]))
+    }
+
+    #[test]
+    fn qr_valid_code_accepted() {
+        assert!(is_valid_qr(&qr_with_payload(120)));
+    }
+
+    #[test]
+    fn qr_rejects_wrong_prefix() {
+        let qr = qr_with_payload(120).replacen('0', "1", 1);
+        assert!(!is_valid_qr(&qr));
+    }
+
+    #[test]
+    fn qr_rejects_payload_not_multiple_of_8() {
+        assert!(!is_valid_qr(&qr_with_payload(121)));
+    }
+
+    #[test]
+    fn qr_rejects_short_code() {
+        assert!(!is_valid_qr(&qr_with_payload(8)));
+    }
+
+    #[test]
+    fn qr_rejects_invalid_base64() {
+        let qr = format!("0{}", "!".repeat(160));
+        assert!(!is_valid_qr(&qr));
+    }
+
+    #[test]
+    fn qr_raw_value_is_trimmed() {
+        assert_eq!(qr_value_from_input("  0abc \n"), "0abc");
+    }
+
+    #[test]
+    fn qr_value_extracted_from_deep_link() {
+        let url = "https://sede.agenciatributaria.gob.es/appclave/qrscan?qrcode=0AbC%2B";
+        assert_eq!(qr_value_from_input(url), "0AbC%2B");
+    }
+
+    #[test]
+    fn qr_unrelated_url_is_left_as_is() {
+        let url = "https://example.com/appclave/qrscan?qrcode=0abc";
+        assert_eq!(qr_value_from_input(url), url);
+    }
+
+    // -- poll cursor --
+
+    #[test]
+    fn cursor_prefers_in_memory_value() {
+        assert_eq!(pick_cursor(Some("B"), Some("A")), "B");
+    }
+
+    #[test]
+    fn cursor_falls_back_to_stored_value() {
+        assert_eq!(pick_cursor(None, Some("A")), "A");
+    }
+
+    #[test]
+    fn cursor_defaults_to_epoch() {
+        assert_eq!(pick_cursor(None, None), EPOCH_TIMESTAMP);
+    }
+
+    #[test]
+    fn cursor_read_from_peticion_timestamp() {
+        let resp = serde_json::json!({"peticion": {"timestamp": "20261015T120000000Z"}});
+        assert_eq!(peticion_timestamp(&resp), Some("20261015T120000000Z"));
+    }
+
+    #[test]
+    fn cursor_ignores_top_level_timestamp() {
+        let resp = serde_json::json!({"timestamp": "20261015T120000000Z", "peticion": null});
+        assert_eq!(peticion_timestamp(&resp), None);
+    }
+
+    #[test]
+    fn request_older_than_cursor_is_stale() {
+        assert!(is_stale("20261015T110000000Z", "20261015T120000000Z"));
+    }
+
+    #[test]
+    fn request_equal_to_cursor_is_not_stale() {
+        assert!(!is_stale("20261015T120000000Z", "20261015T120000000Z"));
+    }
+
+    #[test]
+    fn stale_request_is_dropped_from_payload() {
+        let mut data = serde_json::json!({
+            "peticion": {"tokenClaveMovil": "t", "timestamp": "20261015T110000000Z"}
+        });
+        drop_stale_peticion(&mut data, "20261015T120000000Z");
+        assert!(!has_pending_request(&data));
+    }
+
+    #[test]
+    fn fresh_request_is_kept_in_payload() {
+        let mut data = serde_json::json!({
+            "peticion": {"tokenClaveMovil": "t", "timestamp": "20261015T130000000Z"}
+        });
+        drop_stale_peticion(&mut data, "20261015T120000000Z");
+        assert!(has_pending_request(&data));
+    }
+
+    // -- session_from_activation --
+
+    fn activation(device_id: Option<&str>) -> crate::api::ActivateResponse {
+        crate::api::ActivateResponse {
+            device_id: device_id.map(str::to_string),
+            nif: None,
+            token: Some("push-token".into()),
+        }
+    }
+
+    #[test]
+    fn activation_session_prefers_server_nif() {
+        let mut data = activation(Some("dev-1"));
+        data.nif = Some("X1234567L".into());
+        let session = session_from_activation(data, "12345678Z", "PWD").unwrap();
+        assert_eq!(session.nif, "X1234567L");
+    }
+
+    #[test]
+    fn activation_session_falls_back_to_input_nif() {
+        let session = session_from_activation(activation(Some("dev-1")), "12345678Z", "PWD").unwrap();
+        assert_eq!(session.nif, "12345678Z");
+    }
+
+    #[test]
+    fn activation_session_uses_server_device_id() {
+        let session = session_from_activation(activation(Some("dev-1")), "12345678Z", "PWD").unwrap();
+        assert_eq!(session.device_id, "dev-1");
+    }
+
+    #[test]
+    fn activation_session_stores_local_password() {
+        let session = session_from_activation(activation(Some("dev-1")), "12345678Z", "PWD").unwrap();
+        assert_eq!(session.device_password.as_str(), "PWD");
+    }
+
+    #[test]
+    fn activation_fails_without_device_id() {
+        assert!(session_from_activation(activation(None), "12345678Z", "PWD").is_err());
+    }
+
+    #[test]
+    fn activation_fails_with_empty_device_id() {
+        assert!(session_from_activation(activation(Some("")), "12345678Z", "PWD").is_err());
+    }
+
+    // -- needs_app_movil_retry --
+
+    #[test]
+    fn app_movil_retry_on_ko_987() {
+        assert!(needs_app_movil_retry("KO", Some("987")));
+    }
+
+    #[test]
+    fn app_movil_retry_not_on_other_codes() {
+        assert!(!needs_app_movil_retry("KO", Some("105")));
+    }
+
+    #[test]
+    fn app_movil_retry_not_on_ok() {
+        assert!(!needs_app_movil_retry("OK", None));
+    }
+
+    // -- has_pending_request --
+
+    #[test]
+    fn pending_request_detected_when_peticion_has_token() {
+        let data = serde_json::json!({
+            "peticion": {"tokenClaveMovil": "abc", "codigoIdP": "1234"},
+            "pin": null,
+        });
+        assert!(has_pending_request(&data));
+    }
+
+    #[test]
+    fn pending_request_ignores_pin_only_payload() {
+        let data = serde_json::json!({
+            "pin": {"timeToLive": "120000"},
+            "peticion": null,
+            "timestamp": "20261015T120000000Z",
+        });
+        assert!(!has_pending_request(&data));
+    }
+
+    #[test]
+    fn pending_request_ignores_empty_token() {
+        let data = serde_json::json!({"peticion": {"tokenClaveMovil": ""}});
+        assert!(!has_pending_request(&data));
+    }
+
+    #[test]
+    fn pending_request_ignores_null_data() {
+        assert!(!has_pending_request(&serde_json::Value::Null));
+    }
+
+    // -- is_no_pending_code --
+
+    #[test]
+    fn no_pending_code_accepts_app_code_40() {
+        assert!(is_no_pending_code("40"));
+    }
+
+    #[test]
+    fn no_pending_code_rejects_device_errors() {
+        assert!(!is_no_pending_code("105"));
+    }
+
+    // -- attempt_allowed --
+
+    #[test]
+    fn attempts_unlimited_when_max_is_zero() {
+        assert!(attempt_allowed(1_000_000, 0));
+    }
+
+    #[test]
+    fn attempts_stop_after_max() {
+        assert!(!attempt_allowed(4, 3));
+    }
+
+    #[test]
+    fn attempts_allow_last_one() {
+        assert!(attempt_allowed(3, 3));
+    }
+
+    // -- ttl_ms_to_seconds --
+
+    #[test]
+    fn ttl_converts_millis_to_seconds() {
+        assert_eq!(ttl_ms_to_seconds("180000").as_deref(), Some("180"));
+    }
+
+    #[test]
+    fn ttl_rounds_down_partial_seconds() {
+        assert_eq!(ttl_ms_to_seconds("179999").as_deref(), Some("179"));
+    }
+
+    #[test]
+    fn ttl_trims_whitespace() {
+        assert_eq!(ttl_ms_to_seconds(" 60000 ").as_deref(), Some("60"));
+    }
+
+    #[test]
+    fn ttl_rejects_non_numeric() {
+        assert_eq!(ttl_ms_to_seconds("abc"), None);
+        assert_eq!(ttl_ms_to_seconds(""), None);
     }
 }

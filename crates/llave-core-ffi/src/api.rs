@@ -95,7 +95,7 @@ pub fn set_proxy(url: Option<String>) {
 /// Export the current session as a JSON string.
 ///
 /// Flutter should call this after operations that create or mutate the session
-/// (e.g. `activate_device`) and persist the returned JSON in
+/// (e.g. `dni_complete_activation`) and persist the returned JSON in
 /// `flutter_secure_storage`.  Returns `null` if there is no active session.
 #[frb]
 pub fn export_session() -> Option<String> {
@@ -112,12 +112,6 @@ fn session_and_client(
     let session = llave_core::Session::load().map_err(|e| e.to_string())?;
     let client = llave_core::shared_client().map_err(|e| e.to_string())?;
     Ok((session, client))
-}
-
-/// Load session (to verify it exists) and return the shared client.
-fn require_session_client() -> Result<std::sync::Arc<llave_core::LlaveClient>, String> {
-    let _session = llave_core::Session::load().map_err(|e| e.to_string())?;
-    llave_core::shared_client().map_err(|e| e.to_string())
 }
 
 /// Convert a `Result<T, E>` into an `FfiApiResult`.
@@ -152,32 +146,6 @@ fn save_session_config(nif: &str, device_id: &str) {
 // ---------------------------------------------------------------------------
 // Bridge functions
 // ---------------------------------------------------------------------------
-
-/// Activate this device with Llave.
-#[frb]
-pub async fn activate_device(
-    nif: String,
-    password: Option<String>,
-) -> Result<FfiSession, String> {
-    let nif = llave_core::config::validate_nif(&nif).map_err(|e| e.to_string())?;
-    let device_id = uuid::Uuid::new_v4().to_string();
-    let device_password = password.unwrap_or_else(|| llave_core::crypto::generate_device_password());
-
-    let client = llave_core::shared_client().map_err(|e| e.to_string())?;
-    let session =
-        llave_core::auth::activate_device(&client, &nif, &device_id, &device_password)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    save_session_config(&nif, &device_id);
-
-    Ok(FfiSession {
-        device_id: session.device_id,
-        nif: session.nif,
-        created_at: session.created_at,
-        has_firebase_token: session.firebase_token.is_some(),
-    })
-}
 
 /// Request a Llave PIN.
 #[frb]
@@ -226,7 +194,10 @@ pub async fn check_nif(nif: Option<String>) -> Result<FfiNifCheckResult, String>
     };
 
     let client = llave_core::shared_client().map_err(|e| e.to_string())?;
-    let device_id = uuid::Uuid::new_v4().to_string();
+    // Like the app: the stored device id (empty if not activated).
+    let device_id = llave_core::Session::load()
+        .map(|s| s.device_id)
+        .unwrap_or_default();
 
     let resp = client
         .clave_is_nif_activated(&device_id, &nif)
@@ -247,69 +218,31 @@ pub async fn check_nif(nif: Option<String>) -> Result<FfiNifCheckResult, String>
 #[frb]
 pub async fn get_my_data() -> Result<FfiApiResult, String> {
     let (session, client) = session_and_client()?;
-
-    // Step 1: ClaveIsNifActivatedSv (the Android app calls this before CheckMyData).
-    let _activated = client
-        .clave_is_nif_activated(&session.device_id, &session.nif)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Step 2: ClaveCheckMyDataSv (returns email, numTelefono, nivelRegistro).
-    match client
-        .clave_check_my_data(&session.device_id, &session.nif)
-        .await
-    {
-        Ok(resp) => {
-            // Build a combined response including NIF (not returned by server
-            // but known from the session) so the UI can display it.
-            let mut data = serde_json::Map::new();
-            data.insert("nif".into(), serde_json::json!(session.nif));
-            if let Some(ref inner) = resp.respuesta {
-                if let Some(ref v) = inner.email {
-                    data.insert("email".into(), serde_json::json!(v));
-                }
-                if let Some(ref v) = inner.num_telefono {
-                    data.insert("numTelefono".into(), serde_json::json!(v));
-                }
-                if let Some(ref v) = inner.nivel_registro {
-                    data.insert("nivelRegistro".into(), serde_json::json!(v));
-                }
-            }
-            Ok(FfiApiResult {
-                ok: true,
-                data: serde_json::to_string(&data).unwrap_or_default(),
-                error: None,
-            })
-        }
-        Err(e) => Ok(FfiApiResult {
-            ok: false,
-            data: String::new(),
-            error: Some(e.to_string()),
-        }),
-    }
+    // The NIF is not returned by the server; add it from the session so the
+    // UI can display it.
+    to_ffi_result(
+        llave_core::auth::my_data(&client, &session)
+            .await
+            .map(|d| {
+                serde_json::json!({
+                    "nif": session.nif,
+                    "email": d.email,
+                    "numTelefono": d.num_telefono,
+                    "nivelRegistro": d.nivel_registro,
+                })
+            }),
+    )
 }
 
 /// Get operations history.
 #[frb]
 pub async fn get_history() -> Result<FfiApiResult, String> {
     let (session, client) = session_and_client()?;
-
-    // Default date range: last 30 days in DD/MM/YYYY format.
-    let now = chrono::Local::now();
-    let desde = (now - chrono::Duration::days(30)).format("%d/%m/%Y").to_string();
-    let hasta = now.format("%d/%m/%Y").to_string();
-
+    // The history screen shows a month of confirmed and rejected requests
+    // (the app's own default is 7 days, confirmed only).
     to_ffi_result(
-        client
-            .operations_history(
-                &session.device_id,
-                &session.device_password,
-                &session.nif,
-                &desde,
-                &hasta,
-            )
-            .await
-            .map(|r| r.respuesta),
+        llave_core::auth::history(&client, &session, 30, llave_core::auth::HistoryResult::All)
+            .await,
     )
 }
 
@@ -342,43 +275,18 @@ pub async fn reject_request(token: String, idp_code: String) -> Result<FfiApiRes
 #[frb]
 pub async fn qr_authenticate(value: String) -> Result<FfiApiResult, String> {
     let (session, client) = session_and_client()?;
-    to_ffi_result(
-        client
-            .qr_authenticate(&session.device_id, &session.nif, &value)
-            .await
-            .map(|r| r.respuesta),
-    )
+    to_ffi_result(llave_core::auth::qr_authenticate(&client, &session, &value).await)
 }
 
 /// Deactivate this device.
 #[frb]
 pub async fn deactivate() -> Result<FfiApiResult, String> {
     let (session, client) = session_and_client()?;
-
-    match client
-        .deactivate_authentication(&session.device_id, &session.nif)
-        .await
-    {
-        Ok(resp) => {
-            if let Err(e) = llave_core::Session::delete() {
-                tracing::warn!(err = %e, "failed to delete session after deactivation");
-            }
-            Ok(FfiApiResult {
-                ok: true,
-                data: serde_json::to_string(&serde_json::json!({
-                    "status": resp.status,
-                    "message": "Device deactivated"
-                }))
-                .unwrap_or_default(),
-                error: None,
-            })
-        }
-        Err(e) => Ok(FfiApiResult {
-            ok: false,
-            data: String::new(),
-            error: Some(e.to_string()),
-        }),
-    }
+    to_ffi_result(
+        llave_core::auth::deactivate(&client, &session)
+            .await
+            .map(|()| serde_json::json!({"status": "OK", "message": "Device deactivated"})),
+    )
 }
 
 /// Log out and clear saved credentials.
@@ -452,7 +360,9 @@ pub async fn dni_authenticate(
     let nif = llave_core::config::validate_nif(&nif).map_err(|e| e.to_string())?;
     let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
-    match llave_core::auth::dni_request_sms(&client, &nif, &fecha, &soporte).await {
+    // No birth-date retry here yet: `DniBirthDateRequired` reaches Flutter
+    // as a plain error message (the CLI handles the retry interactively).
+    match llave_core::auth::dni_request_sms(&client, &nif, &fecha, &soporte, None).await {
         Ok(phase1) => {
             tracing::info!(
                 movil = %phase1.sms.movil,
@@ -536,81 +446,3 @@ pub async fn dni_complete_activation(
     }
 }
 
-/// Register a Firebase push notification token.
-#[frb]
-pub async fn set_firebase_token(token_push: String) -> Result<FfiApiResult, String> {
-    let (session, client) = session_and_client()?;
-    to_ffi_result(
-        client
-            .set_firebase_token(&session.device_id, &session.nif, &token_push)
-            .await
-            .map(|r| r.respuesta),
-    )
-}
-
-/// Request an SMS verification code.
-#[frb]
-pub async fn request_sms_code() -> Result<FfiApiResult, String> {
-    let client = require_session_client()?;
-    to_ffi_result(client.request_sms_code().await.map(|r| r.respuesta))
-}
-
-/// Validate an SMS verification code.
-#[frb]
-pub async fn validate_sms_code(
-    timestamp: String,
-    token: String,
-    pin: String,
-) -> Result<FfiApiResult, String> {
-    let client = require_session_client()?;
-    to_ffi_result(
-        client
-            .validate_sms_code(&timestamp, &token, &pin)
-            .await
-            .map(|r| r.respuesta),
-    )
-}
-
-/// Get Llave Móvil token.
-#[frb]
-pub async fn get_llave_movil() -> Result<FfiApiResult, String> {
-    let client = require_session_client()?;
-    to_ffi_result(client.get_llave_movil().await.map(|r| r.respuesta))
-}
-
-/// Validate a Llave Móvil token.
-#[frb]
-pub async fn validate_llave_movil(token: String) -> Result<FfiApiResult, String> {
-    let client = require_session_client()?;
-    to_ffi_result(
-        client
-            .validate_llave_movil(&token)
-            .await
-            .map(|r| r.respuesta),
-    )
-}
-
-/// Get pending market petitions.
-#[frb]
-pub async fn get_pending_petitions() -> Result<FfiApiResult, String> {
-    let (session, client) = session_and_client()?;
-    to_ffi_result(
-        client
-            .get_pending_petitions(&session.device_id, &session.nif)
-            .await
-            .map(|r| r.respuesta),
-    )
-}
-
-/// Listen for pending authentication requests (polling loop).
-#[frb]
-pub async fn listen_for_requests(
-    interval_secs: u64,
-    max_attempts: u32,
-) -> Result<FfiApiResult, String> {
-    let (session, client) = session_and_client()?;
-    to_ffi_result(
-        llave_core::auth::listen_for_requests(&client, &session, interval_secs, max_attempts)
-            .await,
-    )
-}

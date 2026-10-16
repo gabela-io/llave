@@ -33,6 +33,30 @@ pub enum LlaveError {
     #[error("Server returned HTML instead of JSON at {endpoint} — session may have expired or DNI auth may have failed")]
     HtmlResponse { endpoint: String },
 
+    #[error("This device is no longer active in Cl@ve (code {code}). Run `llave activate` again.")]
+    DeviceNotActive { code: String, message: String },
+
+    #[error("This NIF is not registered in Cl@ve. Register first at the AEAT website or an office.")]
+    NotRegistered,
+
+    #[error("Your Cl@ve registration has no mobile phone. Update your phone at the AEAT website first.")]
+    NoRegisteredPhone,
+
+    #[error("The AEAT server requires a newer app version: {message}")]
+    AppVersionOutdated { message: String },
+
+    #[error("Invalid Cl@ve QR code (expected the code shown by the AEAT website)")]
+    InvalidQr,
+
+    #[error("DNI/NIE check needs your date of birth: {message}")]
+    DniBirthDateRequired {
+        challenge: crate::api::DniChallenge,
+        message: String,
+    },
+
+    #[error("No pending Cl@ve PIN. Start a PIN request on the AEAT website (NIF + date) first, then retry.")]
+    NoPendingPin,
+
     #[error("Keyring error: {0}")]
     Keyring(String),
 

@@ -73,18 +73,6 @@ class _DevScreenState extends ConsumerState<DevScreen> {
           // Quick actions
           const _SectionHeader('Quick Actions'),
           _ActionTile(
-            icon: Icons.person_add,
-            title: 'Activate with test NIF',
-            subtitle: 'Activate device using 12345678Z',
-            loading: _loading,
-            onTap: () => _runAction(() async {
-              await ref
-                  .read(authProvider.notifier)
-                  .activate('12345678Z', null);
-              return 'Activation complete';
-            }),
-          ),
-          _ActionTile(
             icon: Icons.pin,
             title: 'Request PIN',
             subtitle: 'Request a new PIN from the bridge',

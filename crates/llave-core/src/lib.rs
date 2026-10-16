@@ -10,6 +10,6 @@ pub use api::{LlaveClient, shared_client, reset_shared_client};
 pub use config::{Config, set_proxy, get_proxy};
 pub use error::LlaveError;
 pub use session::Session;
-pub use storage::{init_storage, MemoryStorage};
+pub use storage::{init_storage, MemoryStorage, PinPrompt, PinRequest, SealedFileStorage};
 #[cfg(not(target_os = "android"))]
 pub use storage::KeyringStorage;

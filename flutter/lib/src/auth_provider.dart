@@ -143,20 +143,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// Activate device and transition to [AuthNeedsPin] so the user sets a PIN.
-  Future<void> activate(String nif, String? password) async {
-    _log.info('activating device');
-    state = const AuthLoading();
-    try {
-      await _bridge.activateDevice(nif, password);
-      _log.info('device activated — prompting for PIN setup');
-      state = const AuthNeedsPin();
-    } catch (e) {
-      _log.severe('activation failed: $e');
-      state = AuthError(e.toString());
-    }
-  }
-
   /// Phase 1: DNI/NIE auth → registration check → request SMS code.
   Future<LlaveApiResult> dniAuthenticate(
       String nif, String fecha, String soporte) async {

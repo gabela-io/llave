@@ -34,10 +34,12 @@ Future<void> handleApiCall({
   required BuildContext context,
   FutureOr<void> Function(dynamic decoded)? onData,
 }) async {
+  // Resolve localisations before the async gap so the context is not used
+  // after it may have been unmounted.
+  final l10n = AppLocalizations.of(context);
   try {
     final result = await apiCall();
     if (!result.ok) {
-      final l10n = AppLocalizations.of(context);
       final err = result.error ?? l10n?.unknownError ?? 'Unknown error';
       setError(err);
       if (context.mounted && isIpRateLimited(err)) {
@@ -47,7 +49,6 @@ Future<void> handleApiCall({
     }
     final decoded = tryJsonDecode(result.data);
     if (decoded == null) {
-      final l10n = AppLocalizations.of(context);
       setError(l10n?.invalidResponse ?? 'Invalid response from server');
       return;
     }
