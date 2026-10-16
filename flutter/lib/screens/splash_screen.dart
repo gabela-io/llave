@@ -54,14 +54,14 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       } else if (auth is AuthLocked) {
         context.go(AppRoutes.unlock);
       } else {
-        context.go(AppRoutes.activate);
+        context.go(AppRoutes.dniAuth);
       }
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
       setState(() => _statusText = l10n?.errorWithMessage(e.toString()) ?? 'Error: $e');
       await Future<void>.delayed(const Duration(seconds: 2));
-      if (mounted) context.go(AppRoutes.activate);
+      if (mounted) context.go(AppRoutes.dniAuth);
     }
   }
 

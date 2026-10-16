@@ -1,6 +1,19 @@
 {
   "@@locale": "en",
 
+  "pinCardTitle": "Cl@ve PIN",
+  "pinCardHint": "Request a PIN on the AEAT website, then reveal it here.",
+  "pinReveal": "Show PIN",
+  "pinHide": "Hide",
+  "pinNoPending": "There is no pending PIN. Request one on the AEAT website first.",
+  "pinBiometricReason": "Confirm to show your Cl@ve PIN",
+  "pinValidFor": "Valid for {seconds} s",
+  "@pinValidFor": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+
   "cancel": "Cancel",
   "retry": "Retry",
   "refresh": "Refresh",

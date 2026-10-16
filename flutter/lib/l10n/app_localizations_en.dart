@@ -9,6 +9,31 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get pinCardTitle => 'Cl@ve PIN';
+
+  @override
+  String get pinCardHint =>
+      'Request a PIN on the AEAT website, then reveal it here.';
+
+  @override
+  String get pinReveal => 'Show PIN';
+
+  @override
+  String get pinHide => 'Hide';
+
+  @override
+  String get pinNoPending =>
+      'There is no pending PIN. Request one on the AEAT website first.';
+
+  @override
+  String get pinBiometricReason => 'Confirm to show your Cl@ve PIN';
+
+  @override
+  String pinValidFor(int seconds) {
+    return 'Valid for $seconds s';
+  }
+
+  @override
   String get cancel => 'Cancel';
 
   @override

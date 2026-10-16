@@ -98,6 +98,48 @@ abstract class AppLocalizations {
     Locale('es')
   ];
 
+  /// No description provided for @pinCardTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Cl@ve PIN'**
+  String get pinCardTitle;
+
+  /// No description provided for @pinCardHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Request a PIN on the AEAT website, then reveal it here.'**
+  String get pinCardHint;
+
+  /// No description provided for @pinReveal.
+  ///
+  /// In en, this message translates to:
+  /// **'Show PIN'**
+  String get pinReveal;
+
+  /// No description provided for @pinHide.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide'**
+  String get pinHide;
+
+  /// No description provided for @pinNoPending.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no pending PIN. Request one on the AEAT website first.'**
+  String get pinNoPending;
+
+  /// No description provided for @pinBiometricReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm to show your Cl@ve PIN'**
+  String get pinBiometricReason;
+
+  /// No description provided for @pinValidFor.
+  ///
+  /// In en, this message translates to:
+  /// **'Valid for {seconds} s'**
+  String pinValidFor(int seconds);
+
   /// No description provided for @cancel.
   ///
   /// In en, this message translates to:

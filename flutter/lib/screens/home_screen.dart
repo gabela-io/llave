@@ -8,6 +8,7 @@ import '../src/auth_provider.dart';
 import '../src/llave_bridge.dart';
 import '../src/routes.dart';
 import '../src/rust/api/api.dart' as native_ffi;
+import '../widgets/pin_card.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -30,8 +31,9 @@ class HomeScreen extends ConsumerWidget {
             ),
         ],
       ),
+      // The router only shows Home with an active session.
       body: session == null
-          ? _UnauthenticatedBody()
+          ? const SizedBox.shrink()
           : _AuthenticatedBody(session: session),
     );
   }
@@ -54,44 +56,6 @@ class HomeScreen extends ConsumerWidget {
             child: Text(l10n.logOut),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _UnauthenticatedBody extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.shield_outlined, size: 64,
-                color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(height: 16),
-            Text(
-              l10n.noActiveSession,
-              style: theme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              l10n.activateToStart,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: () => context.go(AppRoutes.activate),
-              icon: const Icon(Icons.login),
-              label: Text(l10n.activateDevice),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -156,6 +120,8 @@ class _AuthenticatedBodyState extends State<_AuthenticatedBody> {
           error: _error,
           onRetry: _loadAccountData,
         ),
+        const SizedBox(height: 16),
+        const PinCard(),
         const SizedBox(height: 20),
         SizedBox(
           height: 56,

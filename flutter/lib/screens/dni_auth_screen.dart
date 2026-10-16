@@ -168,10 +168,6 @@ class _DniAuthScreenState extends ConsumerState<DniAuthScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.dniAuthTitle),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go(AppRoutes.activate),
-        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(

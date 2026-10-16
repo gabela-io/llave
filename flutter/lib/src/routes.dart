@@ -4,12 +4,10 @@ abstract final class AppRoutes {
   static const String splash = '/splash';
   static const String unlock = '/unlock';
   static const String setPin = '/set-pin';
-  static const String activate = '/activate';
   static const String dniAuth = '/dni-auth';
   static const String pending = '/pending';
   static const String history = '/history';
   static const String settings = '/settings';
   static const String qr = '/qr';
-  static const String mydata = '/mydata';
   static const String dev = '/dev';
 }

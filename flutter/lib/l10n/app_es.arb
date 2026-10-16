@@ -1,6 +1,14 @@
 {
   "@@locale": "es",
 
+  "pinCardTitle": "Cl@ve PIN",
+  "pinCardHint": "Solicita un PIN en la web de la AEAT y muéstralo aquí.",
+  "pinReveal": "Mostrar PIN",
+  "pinHide": "Ocultar",
+  "pinNoPending": "No hay ningún PIN pendiente. Solicítalo primero en la web de la AEAT.",
+  "pinBiometricReason": "Confirma para ver tu Cl@ve PIN",
+  "pinValidFor": "Válido durante {seconds} s",
+
   "cancel": "Cancelar",
   "retry": "Reintentar",
   "refresh": "Actualizar",
