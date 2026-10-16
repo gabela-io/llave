@@ -48,4 +48,5 @@ sequenceDiagram
 - `valor_qr` is sent exactly as validated; no other processing is applied.
 - The request is in `respuesta.peticion`, not directly in `respuesta`. A response with no `peticion.tokenClaveMovil` contains nothing to confirm.
 - The confirm and reject steps match [Clave Movil](./clave-movil.md#confirm-flow), including the security check.
-- CLI: `llave qr -v '<value or deep link>'`. It shows the organisation and verification code, then asks; "no" rejects. `--yes` skips the prompt.
+- CLI: `llave qr --value '<value or deep link>'`. It shows the organisation and verification code, then asks; "no" rejects. `--yes` skips the prompt.
+- Flutter: the QR screen shows the same security check as a pending request (organisation, verification code, "did you start this?"); "No" rejects.

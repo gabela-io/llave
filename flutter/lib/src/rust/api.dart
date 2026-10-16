@@ -6,7 +6,7 @@
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `require_session_client`, `save_session_config`, `session_and_client`, `to_ffi_result`
+// These functions are ignored because they are not marked as `pub`: `challenge_from_name`, `challenge_name`, `failure`, `save_session_config`, `session_and_client`, `success`, `to_ffi_result`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `FfiSession`
 
 /// Initialise the Rust core storage backend.
@@ -79,6 +79,11 @@ Future<bool> logout() => RustLib.instance.api.crateApiLogout();
 Future<String> validateNif({required String nif}) =>
     RustLib.instance.api.crateApiValidateNif(nif: nif);
 
+/// Which document field the DNI/NIE authentication needs for `nif`:
+/// `"validity_date"`, `"birth_date"` or `"support_number"`.
+Future<String> dniInput({required String nif}) =>
+    RustLib.instance.api.crateApiDniInput(nif: nif);
+
 /// Encrypt the current in-memory session with a PIN.
 ///
 /// Returns a base64-encoded sealed blob. Flutter should store this in
@@ -113,12 +118,17 @@ Future<String> changeSessionPin(
 ///
 /// After this call, the user must enter the SMS PIN they receive,
 /// then call [`dni_complete_activation`] with the PIN and cookies.
+///
+/// `challenge` is empty on the first call. When the server asks for the
+/// date of birth the result is `ok: false` with `data = {"challenge": …}`;
+/// call again with the date of birth as `fecha` and that challenge.
 Future<FfiApiResult> dniAuthenticate(
         {required String nif,
         required String fecha,
-        required String soporte}) =>
-    RustLib.instance.api
-        .crateApiDniAuthenticate(nif: nif, fecha: fecha, soporte: soporte);
+        required String soporte,
+        required String challenge}) =>
+    RustLib.instance.api.crateApiDniAuthenticate(
+        nif: nif, fecha: fecha, soporte: soporte, challenge: challenge);
 
 /// Phase 2: Validate SMS code + activate device.
 ///
@@ -141,16 +151,31 @@ Future<FfiApiResult> dniCompleteActivation(
 class FfiApiResult {
   final bool ok;
   final String data;
+
+  /// English error text, for logs.
   final String? error;
+
+  /// [`LlaveError::kind`](llave_core::LlaveError::kind), for a localised message.
+  final String? errorCode;
+
+  /// The AEAT server's own message for a `KO`, shown as is.
+  final String? serverMessage;
 
   const FfiApiResult({
     required this.ok,
     required this.data,
     this.error,
+    this.errorCode,
+    this.serverMessage,
   });
 
   @override
-  int get hashCode => ok.hashCode ^ data.hashCode ^ error.hashCode;
+  int get hashCode =>
+      ok.hashCode ^
+      data.hashCode ^
+      error.hashCode ^
+      errorCode.hashCode ^
+      serverMessage.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -159,7 +184,9 @@ class FfiApiResult {
           runtimeType == other.runtimeType &&
           ok == other.ok &&
           data == other.data &&
-          error == other.error;
+          error == other.error &&
+          errorCode == other.errorCode &&
+          serverMessage == other.serverMessage;
 }
 
 /// NIF check result.

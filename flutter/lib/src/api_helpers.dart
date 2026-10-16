@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/widgets.dart';
 import '../l10n/app_localizations.dart';
 
+import 'errors.dart';
 import 'ip_rate_limit.dart';
 import 'llave_bridge.dart';
 
@@ -40,9 +41,10 @@ Future<void> handleApiCall({
   try {
     final result = await apiCall();
     if (!result.ok) {
-      final err = result.error ?? l10n?.unknownError ?? 'Unknown error';
-      setError(err);
-      if (context.mounted && isIpRateLimited(err)) {
+      setError(l10n != null
+          ? friendlyError(l10n, result)
+          : result.error ?? 'Unknown error');
+      if (context.mounted && isIpRateLimited(result.error)) {
         showIpRateLimitBanner(context);
       }
       return;

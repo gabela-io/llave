@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -304743608;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 249995508;
 
 // Section: executor
 
@@ -249,12 +249,18 @@ fn wire__crate__api__dni_authenticate_impl(
             let api_nif = <String>::sse_decode(&mut deserializer);
             let api_fecha = <String>::sse_decode(&mut deserializer);
             let api_soporte = <String>::sse_decode(&mut deserializer);
+            let api_challenge = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
                     (move || async move {
-                        let output_ok =
-                            crate::api::dni_authenticate(api_nif, api_fecha, api_soporte).await?;
+                        let output_ok = crate::api::dni_authenticate(
+                            api_nif,
+                            api_fecha,
+                            api_soporte,
+                            api_challenge,
+                        )
+                        .await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -306,6 +312,39 @@ fn wire__crate__api__dni_complete_activation_impl(
                     })()
                     .await,
                 )
+            }
+        },
+    )
+}
+fn wire__crate__api__dni_input_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "dni_input",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_nif = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::dni_input(api_nif)?;
+                    Ok(output_ok)
+                })())
             }
         },
     )
@@ -777,10 +816,14 @@ impl SseDecode for crate::api::FfiApiResult {
         let mut var_ok = <bool>::sse_decode(deserializer);
         let mut var_data = <String>::sse_decode(deserializer);
         let mut var_error = <Option<String>>::sse_decode(deserializer);
+        let mut var_errorCode = <Option<String>>::sse_decode(deserializer);
+        let mut var_serverMessage = <Option<String>>::sse_decode(deserializer);
         return crate::api::FfiApiResult {
             ok: var_ok,
             data: var_data,
             error: var_error,
+            error_code: var_errorCode,
+            server_message: var_serverMessage,
         };
     }
 }
@@ -889,19 +932,20 @@ fn pde_ffi_dispatcher_primary_impl(
         5 => wire__crate__api__decrypt_and_load_session_impl(port, ptr, rust_vec_len, data_len),
         6 => wire__crate__api__dni_authenticate_impl(port, ptr, rust_vec_len, data_len),
         7 => wire__crate__api__dni_complete_activation_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__encrypt_session_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__export_session_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__get_history_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__get_my_data_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__get_pending_requests_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__get_status_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__init_core_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__logout_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__qr_authenticate_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__reject_request_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__request_pin_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__set_proxy_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__validate_nif_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__dni_input_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__encrypt_session_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__export_session_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__get_history_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__get_my_data_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__get_pending_requests_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__get_status_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__init_core_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__logout_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__qr_authenticate_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__reject_request_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__request_pin_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__set_proxy_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__validate_nif_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -927,6 +971,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::FfiApiResult {
             self.ok.into_into_dart().into_dart(),
             self.data.into_into_dart().into_dart(),
             self.error.into_into_dart().into_dart(),
+            self.error_code.into_into_dart().into_dart(),
+            self.server_message.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1013,6 +1059,8 @@ impl SseEncode for crate::api::FfiApiResult {
         <bool>::sse_encode(self.ok, serializer);
         <String>::sse_encode(self.data, serializer);
         <Option<String>>::sse_encode(self.error, serializer);
+        <Option<String>>::sse_encode(self.error_code, serializer);
+        <Option<String>>::sse_encode(self.server_message, serializer);
     }
 }
 

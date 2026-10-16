@@ -1,6 +1,23 @@
 {
   "@@locale": "en",
 
+  "waitStart": "Wait for a login",
+  "waitHint": "Start a Cl@ve login on a website, then wait here for the request.",
+  "waitSearching": "Waiting for a login request…",
+  "waitRemaining": "{seconds} s left",
+  "@waitRemaining": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "waitTimeout": "No request arrived. Start the login on the website and try again.",
+  "requestFrom": "Login request from",
+  "verificationCodeLabel": "Verification code",
+  "verificationCodeHint": "It must match the code shown on the website.",
+  "requestQuestion": "Did you start this login yourself, on the official website, and not from a link in an email or SMS?",
+  "yesConfirm": "Yes, confirm",
+  "noReject": "No, reject",
+
   "pinCardTitle": "Cl@ve PIN",
   "pinCardHint": "Request a PIN on the AEAT website, then reveal it here.",
   "pinReveal": "Show PIN",
@@ -25,6 +42,16 @@
   "authenticate": "Authenticate",
   "authenticating": "Authenticating...",
   "unknownError": "Unknown error",
+  "errorNoConnection": "Could not reach the AEAT servers. Check your connection and try again.",
+  "errorNoSession": "This device has no Cl@ve session. Activate it again.",
+  "errorDeviceNotActive": "This device is no longer active in Cl@ve. Activate it again.",
+  "errorNotRegistered": "This NIF is not registered in Cl@ve. Register on the AEAT website or at an office first.",
+  "errorNoRegisteredPhone": "Your Cl@ve registration has no mobile phone. Add one on the AEAT website first.",
+  "errorAppOutdated": "The AEAT servers no longer accept this version of llave. Update the app.",
+  "errorInvalidQr": "This is not a Cl@ve QR code. Scan the code shown on the AEAT website.",
+  "errorDniData": "The AEAT servers did not accept the document data. Check the NIF and the date or support number.",
+  "errorInvalidNif": "The NIF is not valid.",
+  "errorUnexpectedResponse": "Unexpected response from the AEAT servers. Try again later.",
   "invalidResponse": "Invalid response from server",
   "errorWithMessage": "Error: {error}",
   "@errorWithMessage": {
@@ -110,10 +137,6 @@
   "qrCodeValueLabel": "QR code value",
   "pasteQrContent": "Paste QR content here",
   "invalidPetitionData": "Invalid response: no petition data",
-  "confirmAuthTitle": "Confirm Authentication",
-  "authRequestReceived": "An authentication request has been received:",
-  "organizationLabel": "Organization",
-  "typeLabel": "Type",
 
   "dniAuthTitle": "DNI/NIE Authentication",
   "deviceActivated": "Device activated successfully!",
@@ -130,11 +153,17 @@
   "nifHint": "12345678A",
   "nifRequired": "NIF is required",
   "nifMinLength": "NIF must be at least 8 characters",
-  "fechaValidezLabel": "Fecha de validez del DNI",
-  "ddMmYyyy": "DD/MM/YYYY",
-  "fechaHelperText": "Expiry date printed on your DNI/NIE card",
+  "fechaValidezLabel": "ID card validity date",
+  "ddMmYyyy": "DD-MM-YYYY",
+  "fechaHelperText": "Expiry date printed on your DNI",
   "dateRequired": "Date is required",
-  "useDdMmYyyy": "Use DD/MM/YYYY format",
+  "useDdMmYyyy": "Use DD-MM-YYYY format",
+  "birthDateLabel": "Date of birth",
+  "birthDateHelperText": "As shown on your document",
+  "supportNumberLabel": "Support number",
+  "supportNumberHelperText": "Printed on your NIE card, e.g. E12345678",
+  "supportNumberRequired": "Support number is required",
+  "birthDateChallenge": "For extra security, also enter your date of birth.",
 
   "settingsTitle": "Settings",
   "appearance": "Appearance",

@@ -56,7 +56,15 @@ class FfiApiResult {
   final bool ok;
   final String data;
   final String? error;
-  const FfiApiResult({required this.ok, required this.data, this.error});
+  final String? errorCode;
+  final String? serverMessage;
+  const FfiApiResult({
+    required this.ok,
+    required this.data,
+    this.error,
+    this.errorCode,
+    this.serverMessage,
+  });
 }
 
 class FfiNifCheckResult {
@@ -96,6 +104,11 @@ typedef _Fn3C = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 typedef _Fn3Dart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+typedef _Fn4C = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _Fn4Dart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 
 typedef _Fn5C = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>,
@@ -176,6 +189,23 @@ Map<String, dynamic> _call3(
   return result;
 }
 
+/// Call a 4-arg native function.
+Map<String, dynamic> _call4(String libPath, String symbol, String? a1,
+    String? a2, String? a3, String? a4) {
+  final lib = ffi.DynamicLibrary.open(libPath);
+  final fn = lib.lookupFunction<_Fn4C, _Fn4Dart>(symbol);
+  final p1 = _toNative(a1);
+  final p2 = _toNative(a2);
+  final p3 = _toNative(a3);
+  final p4 = _toNative(a4);
+  final result = _parseResult(lib, fn(p1, p2, p3, p4));
+  _freeNative(p1);
+  _freeNative(p2);
+  _freeNative(p3);
+  _freeNative(p4);
+  return result;
+}
+
 /// Call a 5-arg native function.
 Map<String, dynamic> _call5(
     String libPath, String symbol, String? a1, String? a2, String? a3,
@@ -232,6 +262,13 @@ String validateNif({required String nif}) {
   return r['data'] as String;
 }
 
+/// Document field the DNI/NIE authentication needs for [nif]:
+/// `validity_date`, `birth_date` or `support_number`.
+String dniInput({required String nif}) {
+  final r = _checkOk(_call1(nativeLibPath, 'llave_dni_input', nif));
+  return r['data'] as String;
+}
+
 /// Encrypt the current in-memory session with a PIN.
 String encryptSession({required String pin}) {
   final r = _checkOk(_call1(nativeLibPath, 'llave_encrypt_session', pin));
@@ -284,6 +321,8 @@ FfiApiResult _toApiResult(Map<String, dynamic> r) {
     ok: d['ok'] as bool,
     data: d['data'] as String? ?? '',
     error: d['error'] as String?,
+    errorCode: d['error_code'] as String?,
+    serverMessage: d['server_message'] as String?,
   );
 }
 
@@ -325,11 +364,15 @@ Future<FfiApiResult> deactivate() async {
   return Isolate.run(() => _toApiResult(_checkOk(_call0(lp, 'llave_deactivate'))));
 }
 
-Future<FfiApiResult> dniAuthenticate(
-    {required String nif, required String fecha, required String soporte}) async {
+Future<FfiApiResult> dniAuthenticate({
+  required String nif,
+  required String fecha,
+  required String soporte,
+  String challenge = '',
+}) async {
   final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call3(lp, 'llave_dni_authenticate', nif, fecha, soporte))));
+  return Isolate.run(() => _toApiResult(_checkOk(
+      _call4(lp, 'llave_dni_authenticate', nif, fecha, soporte, challenge))));
 }
 
 Future<FfiApiResult> dniCompleteActivation({

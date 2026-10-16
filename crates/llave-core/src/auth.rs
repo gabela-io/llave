@@ -406,6 +406,31 @@ pub async fn poll_pending_requests(
     }))
 }
 
+/// Whether a polling error just means "nothing yet, poll again".
+fn keep_polling(err: &crate::LlaveError) -> bool {
+    matches!(err, crate::LlaveError::Api { code, .. }
+        if is_no_pending_code(code) || is_retry_later_code(code))
+}
+
+/// One polling step for a "waiting for login" loop driven by the caller.
+///
+/// Returns `Some(peticion)` when an actionable request is pending, `None`
+/// when there is nothing yet (including the codes that mean "keep polling"),
+/// and an error for anything that should stop the loop (e.g. device revoked).
+pub async fn next_pending_request(
+    client: &LlaveClient,
+    session: &Session,
+) -> Result<Option<serde_json::Value>> {
+    match poll_pending_requests(client, session).await {
+        Ok(result) => Ok(result
+            .get("data")
+            .filter(|data| has_pending_request(data))
+            .and_then(|data| data.get("peticion").cloned())),
+        Err(e) if keep_polling(&e) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// Confirm a pending Llave Móvil authentication request.
 ///
 /// Mirrors the official app's `confirmarPeticionAutenticacionAndContinue`:
@@ -938,6 +963,28 @@ mod tests {
             registration_gate(&state("true", "N")),
             Err(crate::LlaveError::NoRegisteredPhone)
         ));
+    }
+
+    // -- keep_polling --
+
+    fn api_error(code: &str) -> crate::LlaveError {
+        crate::LlaveError::Api { status: "KO".into(), code: code.into(), message: String::new() }
+    }
+
+    #[test]
+    fn keep_polling_on_no_request_codes() {
+        assert!(["40", "205", "407"].iter().all(|c| keep_polling(&api_error(c))));
+    }
+
+    #[test]
+    fn stop_polling_on_other_errors() {
+        assert!(!keep_polling(&api_error("105")));
+    }
+
+    #[test]
+    fn stop_polling_on_device_not_active() {
+        let err = crate::LlaveError::DeviceNotActive { code: "109".into(), message: String::new() };
+        assert!(!keep_polling(&err));
     }
 
     // -- retry-later code --

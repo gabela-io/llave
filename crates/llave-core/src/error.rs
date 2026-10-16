@@ -71,3 +71,74 @@ pub enum LlaveError {
 }
 
 pub type Result<T> = std::result::Result<T, LlaveError>;
+
+impl LlaveError {
+    /// Stable identifier of the error variant, for frontends that show
+    /// their own (localised) message instead of the English `Display` text.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Http(_) => "http",
+            Self::Api { .. } => "api",
+            Self::NoSession => "no_session",
+            Self::Config(_) => "config",
+            Self::Crypto(_) => "crypto",
+            Self::Io(_) => "io",
+            Self::Json(_) => "json",
+            Self::DniAuthFailed => "dni_auth_failed",
+            Self::HtmlResponse { .. } => "html_response",
+            Self::DeviceNotActive { .. } => "device_not_active",
+            Self::NotRegistered => "not_registered",
+            Self::NoRegisteredPhone => "no_registered_phone",
+            Self::AppVersionOutdated { .. } => "app_version_outdated",
+            Self::InvalidQr => "invalid_qr",
+            Self::DniBirthDateRequired { .. } => "dni_birth_date_required",
+            Self::NoPendingPin => "no_pending_pin",
+            Self::Keyring(_) => "keyring",
+            Self::InvalidNif(_) => "invalid_nif",
+            Self::IpRateLimited { .. } => "ip_rate_limited",
+            Self::TooManyRedirects { .. } => "too_many_redirects",
+        }
+    }
+
+    /// The message the AEAT server sent with a `KO`, when there is one.
+    /// The app shows it as is.
+    pub fn server_message(&self) -> Option<&str> {
+        match self {
+            Self::Api { message, .. }
+            | Self::DeviceNotActive { message, .. }
+            | Self::AppVersionOutdated { message }
+            | Self::DniBirthDateRequired { message, .. }
+            | Self::IpRateLimited { message } => Some(message.as_str()).filter(|m| !m.trim().is_empty()),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kind_identifies_the_variant() {
+        assert_eq!(LlaveError::NoPendingPin.kind(), "no_pending_pin");
+        let api = LlaveError::Api { status: "KO".into(), code: "416".into(), message: "x".into() };
+        assert_eq!(api.kind(), "api");
+    }
+
+    #[test]
+    fn server_message_is_the_ko_text() {
+        let api = LlaveError::Api {
+            status: "KO".into(),
+            code: "300".into(),
+            message: "Datos incorrectos".into(),
+        };
+        assert_eq!(api.server_message(), Some("Datos incorrectos"));
+    }
+
+    #[test]
+    fn blank_server_message_is_none() {
+        let api = LlaveError::Api { status: "KO".into(), code: "300".into(), message: " ".into() };
+        assert_eq!(api.server_message(), None);
+        assert_eq!(LlaveError::InvalidQr.server_message(), None);
+    }
+}

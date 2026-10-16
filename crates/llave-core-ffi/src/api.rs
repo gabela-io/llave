@@ -38,7 +38,28 @@ pub struct FfiStatus {
 pub struct FfiApiResult {
     pub ok: bool,
     pub data: String, // JSON string
+    /// English error text, for logs.
     pub error: Option<String>,
+    /// [`LlaveError::kind`](llave_core::LlaveError::kind), for a localised message.
+    pub error_code: Option<String>,
+    /// The AEAT server's own message for a `KO`, shown as is.
+    pub server_message: Option<String>,
+}
+
+impl FfiApiResult {
+    fn success(data: String) -> Self {
+        Self { ok: true, data, error: None, error_code: None, server_message: None }
+    }
+
+    fn failure(e: &llave_core::LlaveError) -> Self {
+        Self {
+            ok: false,
+            data: String::new(),
+            error: Some(e.to_string()),
+            error_code: Some(e.kind().to_owned()),
+            server_message: e.server_message().map(str::to_owned),
+        }
+    }
 }
 
 /// NIF check result.
@@ -115,20 +136,12 @@ fn session_and_client(
 }
 
 /// Convert a `Result<T, E>` into an `FfiApiResult`.
-fn to_ffi_result<T: serde::Serialize, E: std::fmt::Display>(
-    result: Result<T, E>,
+fn to_ffi_result<T: serde::Serialize>(
+    result: llave_core::error::Result<T>,
 ) -> Result<FfiApiResult, String> {
     Ok(match result {
-        Ok(data) => FfiApiResult {
-            ok: true,
-            data: serde_json::to_string(&data).unwrap_or_default(),
-            error: None,
-        },
-        Err(e) => FfiApiResult {
-            ok: false,
-            data: String::new(),
-            error: Some(e.to_string()),
-        },
+        Ok(data) => FfiApiResult::success(serde_json::to_string(&data).unwrap_or_default()),
+        Err(e) => FfiApiResult::failure(&e),
     })
 }
 
@@ -250,7 +263,9 @@ pub async fn get_history() -> Result<FfiApiResult, String> {
 #[frb]
 pub async fn get_pending_requests() -> Result<FfiApiResult, String> {
     let (session, client) = session_and_client()?;
-    to_ffi_result(llave_core::auth::poll_pending_requests(&client, &session).await)
+    // `data` is the pending `peticion` object, or `null` when there is
+    // nothing yet (codes meaning "keep polling" are folded in by the core).
+    to_ffi_result(llave_core::auth::next_pending_request(&client, &session).await)
 }
 
 /// Confirm a pending Llave Móvil authentication request.
@@ -302,6 +317,38 @@ pub fn validate_nif(nif: String) -> Result<String, String> {
     llave_core::config::validate_nif(&nif).map_err(|e| e.to_string())
 }
 
+/// Which document field the DNI/NIE authentication needs for `nif`:
+/// `"validity_date"`, `"birth_date"` or `"support_number"`.
+#[frb]
+pub fn dni_input(nif: String) -> Result<String, String> {
+    use llave_core::config::DniInput;
+    let nif = llave_core::config::validate_nif(&nif).map_err(|e| e.to_string())?;
+    Ok(match llave_core::config::required_dni_input(&nif) {
+        DniInput::ValidityDate => "validity_date",
+        DniInput::BirthDate => "birth_date",
+        DniInput::SupportNumber => "support_number",
+    }
+    .into())
+}
+
+/// Wire name of a [`DniChallenge`](llave_core::api::DniChallenge), as
+/// passed between Flutter and [`dni_authenticate`].
+fn challenge_name(challenge: llave_core::api::DniChallenge) -> &'static str {
+    match challenge {
+        llave_core::api::DniChallenge::Azul => "azul",
+        llave_core::api::DniChallenge::FechaNie => "fecha_nie",
+    }
+}
+
+fn challenge_from_name(name: &str) -> Result<Option<llave_core::api::DniChallenge>, String> {
+    match name {
+        "" => Ok(None),
+        "azul" => Ok(Some(llave_core::api::DniChallenge::Azul)),
+        "fecha_nie" => Ok(Some(llave_core::api::DniChallenge::FechaNie)),
+        other => Err(format!("unknown DNI challenge: {other}")),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // PIN-based session encryption
 // ---------------------------------------------------------------------------
@@ -351,26 +398,30 @@ pub fn change_session_pin(
 ///
 /// After this call, the user must enter the SMS PIN they receive,
 /// then call [`dni_complete_activation`] with the PIN and cookies.
+///
+/// `challenge` is empty on the first call. When the server asks for the
+/// date of birth the result is `ok: false` with `data = {"challenge": …}`;
+/// call again with the date of birth as `fecha` and that challenge.
 #[frb]
 pub async fn dni_authenticate(
     nif: String,
     fecha: String,
     soporte: String,
+    challenge: String,
 ) -> Result<FfiApiResult, String> {
     let nif = llave_core::config::validate_nif(&nif).map_err(|e| e.to_string())?;
     let client = llave_core::shared_client().map_err(|e| e.to_string())?;
 
-    // No birth-date retry here yet: `DniBirthDateRequired` reaches Flutter
-    // as a plain error message (the CLI handles the retry interactively).
-    match llave_core::auth::dni_request_sms(&client, &nif, &fecha, &soporte, None).await {
+    let challenge = challenge_from_name(&challenge)?;
+
+    match llave_core::auth::dni_request_sms(&client, &nif, &fecha, &soporte, challenge).await {
         Ok(phase1) => {
             tracing::info!(
                 movil = %phase1.sms.movil,
                 "DNI/NIE auth succeeded — SMS sent"
             );
-            Ok(FfiApiResult {
-                ok: true,
-                data: serde_json::to_string(&serde_json::json!({
+            Ok(FfiApiResult::success(
+                serde_json::to_string(&serde_json::json!({
                     "registrado": phase1.state.registrado,
                     "nivel_registro": phase1.state.nivel_registro,
                     "telefono": phase1.state.telefono,
@@ -381,16 +432,17 @@ pub async fn dni_authenticate(
                     "cookies_json": phase1.cookies_json,
                 }))
                 .unwrap_or_default(),
-                error: None,
-            })
+            ))
         }
+        // Like the app, the caller asks for the date of birth and calls again
+        // with it as `fecha`, an empty `soporte` and this challenge.
+        Err(e @ llave_core::LlaveError::DniBirthDateRequired { challenge, .. }) => Ok(FfiApiResult {
+            data: serde_json::json!({ "challenge": challenge_name(challenge) }).to_string(),
+            ..FfiApiResult::failure(&e)
+        }),
         Err(e) => {
             tracing::warn!(err = %e, "DNI/NIE auth + SMS request failed");
-            Ok(FfiApiResult {
-                ok: false,
-                data: String::new(),
-                error: Some(e.to_string()),
-            })
+            Ok(FfiApiResult::failure(&e))
         }
     }
 }
@@ -425,24 +477,45 @@ pub async fn dni_complete_activation(
         Ok(session) => {
             save_session_config(&nif, &session.device_id);
             tracing::info!(nif = %session.nif, "DNI/NIE + SMS activation succeeded");
-            Ok(FfiApiResult {
-                ok: true,
-                data: serde_json::to_string(&serde_json::json!({
+            Ok(FfiApiResult::success(
+                serde_json::to_string(&serde_json::json!({
                     "device_id": session.device_id,
                     "nif": session.nif,
                 }))
                 .unwrap_or_default(),
-                error: None,
-            })
+            ))
         }
         Err(e) => {
             tracing::warn!(err = %e, "DNI/NIE SMS validation + activation failed");
-            Ok(FfiApiResult {
-                ok: false,
-                data: String::new(),
-                error: Some(e.to_string()),
-            })
+            Ok(FfiApiResult::failure(&e))
         }
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dni_input_follows_document_type() {
+        assert_eq!(dni_input("12345678Z".into()).unwrap(), "validity_date");
+        assert_eq!(dni_input("X1234567L".into()).unwrap(), "support_number");
+        assert_eq!(dni_input("M1234567L".into()).unwrap(), "birth_date");
+    }
+
+    #[test]
+    fn dni_input_rejects_invalid_nif() {
+        assert!(dni_input("123".into()).is_err());
+    }
+
+    #[test]
+    fn challenge_names_round_trip() {
+        use llave_core::api::DniChallenge;
+        for c in [DniChallenge::Azul, DniChallenge::FechaNie] {
+            assert_eq!(challenge_from_name(challenge_name(c)).unwrap(), Some(c));
+        }
+        assert_eq!(challenge_from_name("").unwrap(), None);
+        assert!(challenge_from_name("bogus").is_err());
+    }
+}

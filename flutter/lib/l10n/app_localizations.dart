@@ -98,6 +98,72 @@ abstract class AppLocalizations {
     Locale('es')
   ];
 
+  /// No description provided for @waitStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait for a login'**
+  String get waitStart;
+
+  /// No description provided for @waitHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a Cl@ve login on a website, then wait here for the request.'**
+  String get waitHint;
+
+  /// No description provided for @waitSearching.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for a login request…'**
+  String get waitSearching;
+
+  /// No description provided for @waitRemaining.
+  ///
+  /// In en, this message translates to:
+  /// **'{seconds} s left'**
+  String waitRemaining(int seconds);
+
+  /// No description provided for @waitTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'No request arrived. Start the login on the website and try again.'**
+  String get waitTimeout;
+
+  /// No description provided for @requestFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'Login request from'**
+  String get requestFrom;
+
+  /// No description provided for @verificationCodeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Verification code'**
+  String get verificationCodeLabel;
+
+  /// No description provided for @verificationCodeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'It must match the code shown on the website.'**
+  String get verificationCodeHint;
+
+  /// No description provided for @requestQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Did you start this login yourself, on the official website, and not from a link in an email or SMS?'**
+  String get requestQuestion;
+
+  /// No description provided for @yesConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Yes, confirm'**
+  String get yesConfirm;
+
+  /// No description provided for @noReject.
+  ///
+  /// In en, this message translates to:
+  /// **'No, reject'**
+  String get noReject;
+
   /// No description provided for @pinCardTitle.
   ///
   /// In en, this message translates to:
@@ -205,6 +271,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unknown error'**
   String get unknownError;
+
+  /// No description provided for @errorNoConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach the AEAT servers. Check your connection and try again.'**
+  String get errorNoConnection;
+
+  /// No description provided for @errorNoSession.
+  ///
+  /// In en, this message translates to:
+  /// **'This device has no Cl@ve session. Activate it again.'**
+  String get errorNoSession;
+
+  /// No description provided for @errorDeviceNotActive.
+  ///
+  /// In en, this message translates to:
+  /// **'This device is no longer active in Cl@ve. Activate it again.'**
+  String get errorDeviceNotActive;
+
+  /// No description provided for @errorNotRegistered.
+  ///
+  /// In en, this message translates to:
+  /// **'This NIF is not registered in Cl@ve. Register on the AEAT website or at an office first.'**
+  String get errorNotRegistered;
+
+  /// No description provided for @errorNoRegisteredPhone.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Cl@ve registration has no mobile phone. Add one on the AEAT website first.'**
+  String get errorNoRegisteredPhone;
+
+  /// No description provided for @errorAppOutdated.
+  ///
+  /// In en, this message translates to:
+  /// **'The AEAT servers no longer accept this version of llave. Update the app.'**
+  String get errorAppOutdated;
+
+  /// No description provided for @errorInvalidQr.
+  ///
+  /// In en, this message translates to:
+  /// **'This is not a Cl@ve QR code. Scan the code shown on the AEAT website.'**
+  String get errorInvalidQr;
+
+  /// No description provided for @errorDniData.
+  ///
+  /// In en, this message translates to:
+  /// **'The AEAT servers did not accept the document data. Check the NIF and the date or support number.'**
+  String get errorDniData;
+
+  /// No description provided for @errorInvalidNif.
+  ///
+  /// In en, this message translates to:
+  /// **'The NIF is not valid.'**
+  String get errorInvalidNif;
+
+  /// No description provided for @errorUnexpectedResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'Unexpected response from the AEAT servers. Try again later.'**
+  String get errorUnexpectedResponse;
 
   /// No description provided for @invalidResponse.
   ///
@@ -530,30 +656,6 @@ abstract class AppLocalizations {
   /// **'Invalid response: no petition data'**
   String get invalidPetitionData;
 
-  /// No description provided for @confirmAuthTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirm Authentication'**
-  String get confirmAuthTitle;
-
-  /// No description provided for @authRequestReceived.
-  ///
-  /// In en, this message translates to:
-  /// **'An authentication request has been received:'**
-  String get authRequestReceived;
-
-  /// No description provided for @organizationLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Organization'**
-  String get organizationLabel;
-
-  /// No description provided for @typeLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Type'**
-  String get typeLabel;
-
   /// No description provided for @dniAuthTitle.
   ///
   /// In en, this message translates to:
@@ -647,19 +749,19 @@ abstract class AppLocalizations {
   /// No description provided for @fechaValidezLabel.
   ///
   /// In en, this message translates to:
-  /// **'Fecha de validez del DNI'**
+  /// **'ID card validity date'**
   String get fechaValidezLabel;
 
   /// No description provided for @ddMmYyyy.
   ///
   /// In en, this message translates to:
-  /// **'DD/MM/YYYY'**
+  /// **'DD-MM-YYYY'**
   String get ddMmYyyy;
 
   /// No description provided for @fechaHelperText.
   ///
   /// In en, this message translates to:
-  /// **'Expiry date printed on your DNI/NIE card'**
+  /// **'Expiry date printed on your DNI'**
   String get fechaHelperText;
 
   /// No description provided for @dateRequired.
@@ -671,8 +773,44 @@ abstract class AppLocalizations {
   /// No description provided for @useDdMmYyyy.
   ///
   /// In en, this message translates to:
-  /// **'Use DD/MM/YYYY format'**
+  /// **'Use DD-MM-YYYY format'**
   String get useDdMmYyyy;
+
+  /// No description provided for @birthDateLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Date of birth'**
+  String get birthDateLabel;
+
+  /// No description provided for @birthDateHelperText.
+  ///
+  /// In en, this message translates to:
+  /// **'As shown on your document'**
+  String get birthDateHelperText;
+
+  /// No description provided for @supportNumberLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Support number'**
+  String get supportNumberLabel;
+
+  /// No description provided for @supportNumberHelperText.
+  ///
+  /// In en, this message translates to:
+  /// **'Printed on your NIE card, e.g. E12345678'**
+  String get supportNumberHelperText;
+
+  /// No description provided for @supportNumberRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Support number is required'**
+  String get supportNumberRequired;
+
+  /// No description provided for @birthDateChallenge.
+  ///
+  /// In en, this message translates to:
+  /// **'For extra security, also enter your date of birth.'**
+  String get birthDateChallenge;
 
   /// No description provided for @settingsTitle.
   ///

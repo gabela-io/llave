@@ -1,239 +1,236 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
-import '../src/api_helpers.dart';
+import '../src/errors.dart';
 import '../src/llave_bridge.dart';
-import '../src/rust/api/api.dart' as native_ffi;
-import '../widgets/data_screen_scaffold.dart';
+import '../widgets/request_card.dart';
 
-class PendingScreen extends StatefulWidget {
-  const PendingScreen({super.key});
+enum _Phase { idle, waiting, found }
+
+/// "Waiting for a login": polls for a Cl@ve Móvil request for a short while
+/// after the user starts a login on a website, then shows it with the app's
+/// security check (organismo, verification code, "did you start this?").
+///
+/// Replaces the official app's push notification, which only wakes the app
+/// up to run this same query.
+class PendingScreen extends ConsumerStatefulWidget {
+  const PendingScreen({
+    super.key,
+    this.pollInterval = const Duration(seconds: 3),
+    this.waitTimeout = const Duration(minutes: 2),
+  });
+
+  final Duration pollInterval;
+  final Duration waitTimeout;
 
   @override
-  State<PendingScreen> createState() => _PendingScreenState();
+  ConsumerState<PendingScreen> createState() => _PendingScreenState();
 }
 
-class _PendingScreenState extends State<PendingScreen> {
-  bool _loading = false;
-  List<Map<String, dynamic>> _requests = [];
-  String? _error;
+class _PendingScreenState extends ConsumerState<PendingScreen> {
+  _Phase _phase = _Phase.idle;
+  Map<String, dynamic>? _request;
+  String? _message;
+  bool _busy = false;
+  int _remaining = 0;
+
+  Timer? _pollTimer;
+  Timer? _ticker;
+
+  /// Bumped on every start/stop so late poll results are ignored.
+  int _generation = 0;
 
   @override
   void initState() {
     super.initState();
-    _refresh();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startWaiting());
   }
 
-  Future<void> _refresh() async {
+  @override
+  void dispose() {
+    _stopTimers();
+    super.dispose();
+  }
+
+  void _stopTimers() {
+    _generation++;
+    _pollTimer?.cancel();
+    _ticker?.cancel();
+  }
+
+  void _startWaiting() {
+    if (!mounted) return;
+    _stopTimers();
+    final generation = _generation;
     setState(() {
-      _loading = true;
-      _error = null;
+      _phase = _Phase.waiting;
+      _request = null;
+      _message = null;
+      _remaining = widget.waitTimeout.inSeconds;
     });
-
-    await handleApiCall(
-      apiCall: () async {
-        final r = await native_ffi.getPendingRequests();
-        return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
-      },
-      setLoading: (v) {
-        if (mounted) setState(() => _loading = v);
-      },
-      setError: (e) {
-        if (mounted) setState(() => _error = e);
-      },
-      context: context,
-      onData: (decoded) {
-        final data = decoded['data'];
-        final List<Map<String, dynamic>> items = [];
-        if (data is Map<String, dynamic>) {
-          final peticion = data['peticion'];
-          if (peticion is Map<String, dynamic> && peticion.isNotEmpty) {
-            items.add(Map<String, dynamic>.from(peticion));
-          }
-        } else if (data is List) {
-          for (final item in data) {
-            if (item is Map<String, dynamic>) items.add(item);
-          }
-        }
-        setState(() => _requests = items);
-      },
-    );
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_remaining <= 1) {
+        _stopWaiting(AppLocalizations.of(context)!.waitTimeout);
+      } else {
+        setState(() => _remaining--);
+      }
+    });
+    _poll(generation);
   }
 
-  Future<void> _confirm(String token, String idpCode) async {
-    final l10n = AppLocalizations.of(context)!;
-    try {
-      final result =
-          await native_ffi.confirmRequest(token: token, idpCode: idpCode);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  result.ok ? l10n.requestConfirmed : (result.error ?? l10n.failed))),
-        );
-        _refresh();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.errorWithMessage(e.toString()))),
-        );
-      }
+  void _stopWaiting([String? message]) {
+    _stopTimers();
+    if (!mounted) return;
+    setState(() {
+      _phase = _Phase.idle;
+      _message = message;
+    });
+  }
+
+  Future<void> _poll(int generation) async {
+    final result = await ref.read(llaveBridgeProvider).getPendingRequests();
+    if (!mounted || generation != _generation) return;
+
+    if (!result.ok) {
+      _stopWaiting(friendlyError(AppLocalizations.of(context)!, result));
+      return;
     }
+    final peticion = jsonDecode(result.data);
+    if (peticion is Map<String, dynamic>) {
+      _stopTimers();
+      setState(() {
+        _phase = _Phase.found;
+        _request = peticion;
+      });
+      return;
+    }
+    _pollTimer = Timer(widget.pollInterval, () => _poll(generation));
   }
 
-  Future<void> _reject(String token, String idpCode) async {
+  Future<void> _answer({required bool confirm}) async {
+    final request = _request;
+    if (request == null) return;
     final l10n = AppLocalizations.of(context)!;
-    try {
-      final result =
-          await native_ffi.rejectRequest(token: token, idpCode: idpCode);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  result.ok ? l10n.requestRejected : (result.error ?? l10n.failed))),
-        );
-        _refresh();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.errorWithMessage(e.toString()))),
-        );
-      }
+    final messenger = ScaffoldMessenger.of(context);
+    final token = request['tokenClaveMovil']?.toString() ?? '';
+    final code = request['codigoIdP']?.toString() ?? '';
+
+    setState(() => _busy = true);
+    final bridge = ref.read(llaveBridgeProvider);
+    final result = confirm
+        ? await bridge.confirmRequest(token, code)
+        : await bridge.rejectRequest(token, code);
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    if (!result.ok) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(friendlyError(l10n, result))),
+      );
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(content: Text(confirm ? l10n.requestConfirmed : l10n.requestRejected)),
+    );
+
+    // The server says whether another request is already queued.
+    final data = jsonDecode(result.data);
+    final morePending = data is Map && data['pending_requests'] == 'S';
+    if (confirm && morePending) {
+      _startWaiting();
+    } else {
+      _stopWaiting();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.pendingTitle),
-        actions: [
-          IconButton(
-            onPressed: _loading ? null : _refresh,
-            icon: const Icon(Icons.refresh),
-            tooltip: l10n.refresh,
-          ),
-        ],
-      ),
-      body: DataScreenScaffold(
-        loading: _loading,
-        error: _error,
-        isEmpty: _requests.isEmpty,
-        onRetry: _refresh,
-        emptyIcon: Icons.inbox_outlined,
-        emptyTitle: l10n.pendingEmptyTitle,
-        emptySubtitle: l10n.pendingEmptySubtitle,
-        child: RefreshIndicator(
-          onRefresh: _refresh,
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _requests.length,
-            itemBuilder: (context, index) {
-              final req = _requests[index];
-              final token = req['tokenClaveMovil']?.toString() ?? '';
-              final idpCode = req['codigoIdP']?.toString() ?? '';
-              final organismo = req['nombreProveedor']?.toString() ??
-                  req['organismo']?.toString() ??
-                  l10n.unknownProvider;
-
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.notifications_active,
-                              color: theme.colorScheme.primary),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              organismo,
-                              style: theme.textTheme.titleSmall,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (idpCode.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          l10n.providerCode(idpCode),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: () => _showConfirmDialog(
-                              context,
-                              reject: true,
-                              onConfirm: () => _reject(token, idpCode),
-                            ),
-                            icon: const Icon(Icons.close, size: 18),
-                            label: Text(l10n.reject),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: theme.colorScheme.error,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          FilledButton.icon(
-                            onPressed: () => _showConfirmDialog(
-                              context,
-                              reject: false,
-                              onConfirm: () => _confirm(token, idpCode),
-                            ),
-                            icon: const Icon(Icons.check, size: 18),
-                            label: Text(l10n.confirm),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+      appBar: AppBar(title: Text(l10n.pendingTitle)),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: switch (_phase) {
+              _Phase.idle => _Idle(message: _message, onStart: _startWaiting),
+              _Phase.waiting => _Waiting(remaining: _remaining, onCancel: _stopWaiting),
+              _Phase.found => RequestCard(
+                  request: _request!,
+                  busy: _busy,
+                  onConfirm: () => _answer(confirm: true),
+                  onReject: () => _answer(confirm: false),
                 ),
-              );
             },
           ),
         ),
       ),
     );
   }
+}
 
-  void _showConfirmDialog(
-    BuildContext context, {
-    required bool reject,
-    required VoidCallback onConfirm,
-  }) {
+class _Idle extends StatelessWidget {
+  const _Idle({required this.message, required this.onStart});
+
+  final String? message;
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final action = reject ? l10n.reject : l10n.confirm;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.actionRequestTitle(action)),
-        content: Text(l10n.actionRequestMessage(action.toLowerCase())),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(l10n.cancel)),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              onConfirm();
-            },
-            child: Text(action),
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.login, size: 56, color: theme.colorScheme.onSurfaceVariant),
+        const SizedBox(height: 16),
+        Text(
+          message ?? l10n.waitHint,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyLarge,
+        ),
+        const SizedBox(height: 24),
+        FilledButton.icon(
+          onPressed: onStart,
+          icon: const Icon(Icons.hourglass_top),
+          label: Text(l10n.waitStart),
+        ),
+      ],
+    );
+  }
+}
+
+class _Waiting extends StatelessWidget {
+  const _Waiting({required this.remaining, required this.onCancel});
+
+  final int remaining;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const CircularProgressIndicator(),
+        const SizedBox(height: 24),
+        Text(l10n.waitSearching, style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Text(
+          l10n.waitRemaining(remaining),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 24),
+        TextButton(onPressed: onCancel, child: Text(l10n.cancel)),
+      ],
     );
   }
 }

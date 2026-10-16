@@ -9,6 +9,45 @@ class AppLocalizationsEs extends AppLocalizations {
   AppLocalizationsEs([String locale = 'es']) : super(locale);
 
   @override
+  String get waitStart => 'Esperar un acceso';
+
+  @override
+  String get waitHint =>
+      'Inicia un acceso con Cl@ve en una web y espera aquí la petición.';
+
+  @override
+  String get waitSearching => 'Esperando una petición de acceso…';
+
+  @override
+  String waitRemaining(int seconds) {
+    return 'Quedan $seconds s';
+  }
+
+  @override
+  String get waitTimeout =>
+      'No ha llegado ninguna petición. Inicia el acceso en la web y vuelve a intentarlo.';
+
+  @override
+  String get requestFrom => 'Petición de acceso de';
+
+  @override
+  String get verificationCodeLabel => 'Código de verificación';
+
+  @override
+  String get verificationCodeHint =>
+      'Debe coincidir con el código que muestra la web.';
+
+  @override
+  String get requestQuestion =>
+      '¿Has iniciado tú este acceso, en la web oficial y no desde un enlace de un correo o SMS?';
+
+  @override
+  String get yesConfirm => 'Sí, confirmar';
+
+  @override
+  String get noReject => 'No, rechazar';
+
+  @override
   String get pinCardTitle => 'Cl@ve PIN';
 
   @override
@@ -65,6 +104,45 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get unknownError => 'Error desconocido';
+
+  @override
+  String get errorNoConnection =>
+      'No se ha podido conectar con los servidores de la AEAT. Comprueba tu conexión e inténtalo de nuevo.';
+
+  @override
+  String get errorNoSession =>
+      'Este dispositivo no tiene sesión de Cl@ve. Vuelve a activarlo.';
+
+  @override
+  String get errorDeviceNotActive =>
+      'Este dispositivo ya no está activo en Cl@ve. Vuelve a activarlo.';
+
+  @override
+  String get errorNotRegistered =>
+      'Este NIF no está registrado en Cl@ve. Regístrate primero en la web de la AEAT o en una oficina.';
+
+  @override
+  String get errorNoRegisteredPhone =>
+      'Tu registro en Cl@ve no tiene teléfono móvil. Añádelo primero en la web de la AEAT.';
+
+  @override
+  String get errorAppOutdated =>
+      'Los servidores de la AEAT ya no aceptan esta versión de llave. Actualiza la app.';
+
+  @override
+  String get errorInvalidQr =>
+      'Este no es un código QR de Cl@ve. Escanea el código que muestra la web de la AEAT.';
+
+  @override
+  String get errorDniData =>
+      'Los servidores de la AEAT no han aceptado los datos del documento. Revisa el NIF y la fecha o el número de soporte.';
+
+  @override
+  String get errorInvalidNif => 'El NIF no es válido.';
+
+  @override
+  String get errorUnexpectedResponse =>
+      'Respuesta inesperada de los servidores de la AEAT. Inténtalo más tarde.';
 
   @override
   String get invalidResponse => 'Respuesta no válida del servidor';
@@ -243,19 +321,6 @@ class AppLocalizationsEs extends AppLocalizations {
       'Respuesta no válida: sin datos de petición';
 
   @override
-  String get confirmAuthTitle => 'Confirmar autenticación';
-
-  @override
-  String get authRequestReceived =>
-      'Se ha recibido una solicitud de autenticación:';
-
-  @override
-  String get organizationLabel => 'Organización';
-
-  @override
-  String get typeLabel => 'Tipo';
-
-  @override
   String get dniAuthTitle => 'Autenticación DNI/NIE';
 
   @override
@@ -305,16 +370,36 @@ class AppLocalizationsEs extends AppLocalizations {
   String get fechaValidezLabel => 'Fecha de validez del DNI';
 
   @override
-  String get ddMmYyyy => 'DD/MM/AAAA';
+  String get ddMmYyyy => 'DD-MM-AAAA';
 
   @override
-  String get fechaHelperText => 'Fecha de caducidad impresa en tu DNI/NIE';
+  String get fechaHelperText => 'Fecha de caducidad impresa en tu DNI';
 
   @override
   String get dateRequired => 'La fecha es obligatoria';
 
   @override
-  String get useDdMmYyyy => 'Usa el formato DD/MM/AAAA';
+  String get useDdMmYyyy => 'Usa el formato DD-MM-AAAA';
+
+  @override
+  String get birthDateLabel => 'Fecha de nacimiento';
+
+  @override
+  String get birthDateHelperText => 'La que figura en tu documento';
+
+  @override
+  String get supportNumberLabel => 'Número de soporte';
+
+  @override
+  String get supportNumberHelperText =>
+      'Impreso en tu tarjeta NIE, p. ej. E12345678';
+
+  @override
+  String get supportNumberRequired => 'El número de soporte es obligatorio';
+
+  @override
+  String get birthDateChallenge =>
+      'Por seguridad, introduce también tu fecha de nacimiento.';
 
   @override
   String get settingsTitle => 'Ajustes';

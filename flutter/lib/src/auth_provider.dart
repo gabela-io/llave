@@ -144,12 +144,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Phase 1: DNI/NIE auth → registration check → request SMS code.
-  Future<LlaveApiResult> dniAuthenticate(
-      String nif, String fecha, String soporte) async {
+  Future<LlaveApiResult> dniAuthenticate(String nif, String fecha, String soporte,
+      {String challenge = ''}) async {
     _log.info('authenticating via DNI/NIE (phase 1: request SMS)');
     state = const AuthLoading();
     try {
-      final result = await _bridge.dniAuthenticate(nif, fecha, soporte);
+      final result = await _bridge.dniAuthenticate(nif, fecha, soporte, challenge: challenge);
       if (result.ok) {
         _log.info('DNI/NIE auth succeeded — SMS sent');
         state = const AuthUnauthenticated();

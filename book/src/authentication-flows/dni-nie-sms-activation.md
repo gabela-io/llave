@@ -213,7 +213,7 @@ The `appmovil` cookie is Base64-encoded JSON that describes the client (app, `ve
 | `AZUL` | `""` or `"X"` | `"X"` when resending after KO `-8` |
 | `FECHANIE` | `""` or `"X"` | `"X"` when resending after KO `-10` |
 
-**FECHA / SOPORTE by document type**: the app shows, and sends, only one field. The other is sent empty (llave: `config::required_dni_input`).
+**FECHA / SOPORTE by document type**: the app shows, and sends, only one field. The other is sent empty (llave: `config::required_dni_input`; Flutter asks the core through `dni_input`).
 
 | Document | First character | `FECHA` | `SOPORTE` |
 |----------|-----------------|---------|-----------|
@@ -232,7 +232,7 @@ The `appmovil` cookie is Base64-encoded JSON that describes the client (app, `ve
    - Other `KO`: API error.
 3. If the body is **not** JSON, llave falls back to its older heuristic: zero redirects means the credentials were rejected (`DniAuthFailed`). The app treats a non-JSON body as success.
 
-llave returns `LlaveError::DniBirthDateRequired { challenge, message }` for `-8`/`-10`. The CLI then prompts for the date of birth and calls `dni_request_sms` again with the challenge.
+llave returns `LlaveError::DniBirthDateRequired { challenge, message }` for `-8`/`-10`. The CLI then prompts for the date of birth and calls `dni_request_sms` again with the challenge. The Flutter app does the same as the official app: it shows the server message, relabels the date field as date of birth and resubmits. Over FFI, `dni_authenticate` returns `ok: false` with `data = {"challenge": "azul" | "fecha_nie"}` and takes the challenge back as its last argument.
 
 ### Step 2: ClaveRequestStateSv
 

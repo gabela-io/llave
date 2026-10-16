@@ -7,7 +7,6 @@ import '../src/api_helpers.dart';
 import '../src/auth_provider.dart';
 import '../src/llave_bridge.dart';
 import '../src/routes.dart';
-import '../src/rust/api/api.dart' as native_ffi;
 import '../widgets/pin_card.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -61,15 +60,15 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _AuthenticatedBody extends StatefulWidget {
+class _AuthenticatedBody extends ConsumerStatefulWidget {
   final dynamic session;
   const _AuthenticatedBody({required this.session});
 
   @override
-  State<_AuthenticatedBody> createState() => _AuthenticatedBodyState();
+  ConsumerState<_AuthenticatedBody> createState() => _AuthenticatedBodyState();
 }
 
-class _AuthenticatedBodyState extends State<_AuthenticatedBody> {
+class _AuthenticatedBodyState extends ConsumerState<_AuthenticatedBody> {
   bool _loading = false;
   Map<String, dynamic>? _accountData;
   String? _error;
@@ -87,10 +86,7 @@ class _AuthenticatedBodyState extends State<_AuthenticatedBody> {
     });
 
     await handleApiCall(
-      apiCall: () async {
-        final r = await native_ffi.getMyData();
-        return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
-      },
+      apiCall: () => ref.read(llaveBridgeProvider).getMyData(),
       setLoading: (v) {
         if (mounted) setState(() => _loading = v);
       },

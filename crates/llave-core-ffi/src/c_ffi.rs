@@ -80,6 +80,8 @@ fn api_result_json(r: Result<crate::api::FfiApiResult, String>) -> *mut c_char {
             "ok": r.ok,
             "data": r.data,
             "error": r.error,
+            "error_code": r.error_code,
+            "server_message": r.server_message,
         })),
         Err(e) => err_json(&e),
     }
@@ -159,6 +161,19 @@ pub unsafe extern "C" fn llave_validate_nif(nif: *const c_char) -> *mut c_char {
     // SAFETY: caller contract.
     let nif = unsafe { to_str(nif) };
     ffi_guard(|| match crate::api::validate_nif(nif) {
+        Ok(v) => ok_json(serde_json::Value::String(v)),
+        Err(e) => err_json(&e),
+    })
+}
+
+/// # Safety
+///
+/// `nif` must satisfy the module-level pointer contract.
+#[no_mangle]
+pub unsafe extern "C" fn llave_dni_input(nif: *const c_char) -> *mut c_char {
+    // SAFETY: caller contract.
+    let nif = unsafe { to_str(nif) };
+    ffi_guard(|| match crate::api::dni_input(nif) {
         Ok(v) => ok_json(serde_json::Value::String(v)),
         Err(e) => err_json(&e),
     })
@@ -311,10 +326,14 @@ pub unsafe extern "C" fn llave_dni_authenticate(
     nif: *const c_char,
     fecha: *const c_char,
     soporte: *const c_char,
+    challenge: *const c_char,
 ) -> *mut c_char {
     // SAFETY: caller contract.
-    let (nif, fecha, soporte) = unsafe { (to_str(nif), to_str(fecha), to_str(soporte)) };
-    ffi_guard(|| api_result_json(rt().block_on(crate::api::dni_authenticate(nif, fecha, soporte))))
+    let (nif, fecha, soporte, challenge) =
+        unsafe { (to_str(nif), to_str(fecha), to_str(soporte), to_str(challenge)) };
+    ffi_guard(|| {
+        api_result_json(rt().block_on(crate::api::dni_authenticate(nif, fecha, soporte, challenge)))
+    })
 }
 
 /// # Safety
@@ -406,5 +425,13 @@ mod tests {
         // SAFETY: `nif` is a valid C string alive for the call.
         let v = take(unsafe { llave_validate_nif(nif.as_ptr()) });
         assert_eq!(v["data"], "12345678Z");
+    }
+
+    #[test]
+    fn dni_input_reports_the_field() {
+        let nif = CString::new("X1234567L").unwrap();
+        // SAFETY: `nif` is a valid C string alive for the call.
+        let v = take(unsafe { llave_dni_input(nif.as_ptr()) });
+        assert_eq!(v["data"], "support_number");
     }
 }
