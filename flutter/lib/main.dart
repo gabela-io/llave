@@ -11,7 +11,6 @@ import 'package:go_router/go_router.dart';
 import 'src/rust/api/api.dart' as native_ffi;
 
 import 'screens/home_screen.dart';
-import 'screens/activate_screen.dart';
 import 'screens/pending_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/settings_screen.dart';
@@ -20,7 +19,6 @@ import 'screens/unlock_screen.dart';
 import 'screens/set_pin_screen.dart';
 import 'screens/dev_screen.dart';
 import 'screens/dni_auth_screen.dart';
-import 'screens/mydata_screen.dart';
 import 'screens/qr_auth_screen.dart';
 import 'src/auth_provider.dart';
 import 'src/routes.dart';
@@ -57,7 +55,7 @@ Future<void> main() async {
 const _protectedRoutes = {AppRoutes.home, AppRoutes.pending, AppRoutes.history, AppRoutes.settings, AppRoutes.qr};
 
 /// Routes that should not be accessible when already authenticated.
-const _guestOnlyRoutes = {AppRoutes.activate, AppRoutes.dniAuth};
+const _guestOnlyRoutes = {AppRoutes.dniAuth};
 
 /// Routes with their own navigation logic (never redirect away from them).
 const _selfManagedRoutes = {AppRoutes.splash, AppRoutes.unlock, AppRoutes.setPin};
@@ -103,8 +101,8 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Redirect unauthenticated users away from protected routes.
       if (!isAuthenticated && _protectedRoutes.contains(location)) {
-        _log.info('redirect: $location → ${AppRoutes.activate} (not authenticated)');
-        return AppRoutes.activate;
+        _log.info('redirect: $location → ${AppRoutes.dniAuth} (not authenticated)');
+        return AppRoutes.dniAuth;
       }
 
       // Redirect authenticated users away from guest-only routes.
@@ -119,7 +117,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: AppRoutes.splash, builder: (_, __) => const SplashScreen()),
       GoRoute(path: AppRoutes.unlock, builder: (_, __) => const UnlockScreen()),
       GoRoute(path: AppRoutes.setPin, builder: (_, __) => const SetPinScreen()),
-      GoRoute(path: AppRoutes.activate, builder: (_, __) => const ActivateScreen()),
       GoRoute(path: AppRoutes.dniAuth, builder: (_, __) => const DniAuthScreen()),
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),
@@ -128,7 +125,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: AppRoutes.pending, builder: (_, __) => const PendingScreen()),
           GoRoute(path: AppRoutes.history, builder: (_, __) => const HistoryScreen()),
           GoRoute(path: AppRoutes.qr, builder: (_, __) => const QrAuthScreen()),
-          GoRoute(path: AppRoutes.mydata, builder: (_, __) => const MyDataScreen()),
           GoRoute(
               path: AppRoutes.settings, builder: (_, __) => const SettingsScreen()),
           if (DevScreen.isEnabled)

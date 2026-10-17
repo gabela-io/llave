@@ -1,38 +1,78 @@
 # PIN Request
 
-The full PIN request sequence mirrors the original app's startup behaviour when the device is already activated. The app calls three endpoints in order.
+A Cl@ve PIN is **started on the AEAT website**, not in the app. The user asks for a PIN on a government login page (NIF plus a date). The server then holds a pending PIN for the activated device. The app only **reveals** that pending PIN. `ClaveRequestPinSv` does not create one.
 
 ## Flow
 
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant Web as AEAT website
+    participant C as App / llave
+    participant W2 as www2
+
+    U->>Web: Request Cl@ve PIN (NIF + date)
+    Note over Web,W2: Server now holds a pending PIN for the device
+
+    C->>W2: ClaveStartingSv {device_id, NIF, ...}
+    W2-->>C: OK / KO
+    opt OK and no appmovil cookie
+        C->>W2: SetCookieAppMovil (JSON)
+    end
+    C->>W2: ClaveRequestAllOperationsSv {device_id, NIF, timestamp}
+    W2-->>C: {respuesta: {pin: {timeToLive, timestamp} | null, peticion, ...}}
+    alt respuesta.pin present
+        C->>W2: ClaveRequestPinSv {device_id, user_password, NIF}
+        W2-->>C: {respuesta: {pin: "123456", timeToLive: "<ms>"}}
+    else no respuesta.pin
+        Note over C: "No pending PIN" (the app never calls ClaveRequestPinSv)
+    end
 ```
-1. ClaveStartingSv  ->  Establish device session (device_id, NIF, OS info)
-                       Sets appmovil cookie.
-                       Response: { status: "OK"|"KO", respuesta: { listaBlancaUrls, listaNegraUrls } }
-                       KO with code 105 is normal for unregistered devices -- continue anyway.
 
-2. ClaveRequestAllOperationsSv  ->  Validate device registration + poll for pending requests.
-                                    Fields: device_id, NIF, timestamp, OS info
-                                    The timestamp acts as a cursor:
-                                      - First call: "19700101T000000000Z" (epoch)
-                                      - Subsequent: timestamp from previous response
-                                    Response: { status: "OK"|"KO", respuesta: { pin, peticion: { timestamp, ... } } }
-                                    Error 105/109 -> device not registered (re-activation required).
-                                    Error 205 -> no pending operations (normal).
+```
+1. ClaveStartingSv              -> device_id, NIF, sistema_operativo, token_push, version_os, version_app, modelo
+                                   OK  -> if no `appmovil` cookie, call SetCookieAppMovil
+                                   KO 105/109 -> device revoked: wipe local session, stop
+                                   KO 416     -> device not active: stop (no wipe)
 
-3. ClaveRequestPinSv  ->  Request a temporary PIN.
-                          Fields: device_id, user_password, NIF, OS info
-                          Response: { status: "OK", respuesta: { pin: "123456", timeToLive: "180" } }
-                          Error 307 -> "No tiene disponible ningun PIN" (no PIN available).
+2. ClaveRequestAllOperationsSv  -> device_id, NIF, timestamp (poll cursor), OS info
+                                   respuesta.pin == null -> no pending PIN, stop
+                                   Errors 105/109/416 handled as in step 1
+
+3. ClaveRequestPinSv            -> device_id, user_password, NIF, OS info
+                                   OK  -> { pin, timeToLive }
+                                   KO 307 -> no valid PIN (e.g. it expired between steps 2 and 3)
 ```
 
-The PIN is a server-generated one-time code. `timeToLive` is in seconds (typically 180 = 3 minutes).
+The official app also asks for biometric/device unlock before step 3 (`accederPin`). It shows "Actualmente no tiene pendiente ningún PIN" when step 2 has no `pin`.
 
-> **Important**: Step 2 (`ClaveRequestAllOperationsSv`) is called by the original
-> app when the "device active" screen loads. Skipping it may cause step 3 to fail
-> with [error 307](../api-reference/error-codes.md). It appears to serve as a server-side session validation step.
+## `timeToLive` Is in Milliseconds
+
+The app passes `timeToLive` straight to `CountDownTimer(millisInFuture)`. For example, `"120000"` means 2 minutes. llave converts it to whole seconds (`ttl_ms_to_seconds`), and the CLI prints that value as `time_to_live_seconds`.
+
+## Error Codes
+
+| Code | Where | Meaning | Action |
+|------|-------|---------|--------|
+| `105`, `109` | Starting, AllOperations | Device revoked / not registered | Delete the local session (app and llave). Re-activation required. |
+| `416` | Starting, AllOperations | Device not active | Stop. **Do not** delete the local session. |
+| `307` | `ClaveRequestPinSv` | "No tiene disponible ningún PIN": no valid PIN | Report "no pending PIN" |
+| `500600` | any | App version outdated | Update `version_app` / User-Agent |
+
+See [Error Codes](../api-reference/error-codes.md) for the full list.
+
+## llave
+
+`auth::request_pin` runs the three steps above:
+
+- It fails with `LlaveError::NoPendingPin` when `respuesta.pin` is absent, or when `ClaveRequestPinSv` answers `307`.
+- It fails with `LlaveError::DeviceNotActive` on `105`/`109`/`416`. For `105`/`109` it deletes the stored session first.
+- It advances and persists the [poll cursor](./pending-operations-polling.md#timestamp-cursor) from `respuesta.peticion.timestamp`.
+
+The CLI equivalent is `llave pin`. Start the PIN request on the AEAT website first.
 
 ## Key Points
 
-- PINs are **server-generated** via `ClaveRequestPinSv` -- the app does NOT generate OTPs locally (no TOTP/HOTP).
-- Authentication is tied to `device_id` (server-generated) + `device_password` (client-generated SHA-512 hash). See [Device Password](../cryptography/device-password.md).
-- The session validation step (step 2) must not be skipped, even if there are no pending operations.
+- PINs are generated **server-side**, on request from the website. There is no local OTP (TOTP/HOTP).
+- Reveal the PIN only when `ClaveRequestAllOperationsSv` reports `respuesta.pin`.
+- `ClaveRequestPinSv` needs `device_id` (server-generated) plus `user_password` (client-generated). See [Device Password](../cryptography/device-password.md).

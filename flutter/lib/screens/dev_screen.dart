@@ -62,8 +62,7 @@ class _DevScreenState extends ConsumerState<DevScreen> {
             subtitle: session != null
                 ? Text('NIF: ${session.nif}\n'
                     'Device: ${session.deviceId}\n'
-                    'Created: ${session.createdAt}\n'
-                    'Firebase: ${session.hasFirebaseToken}')
+                    'Created: ${session.createdAt}')
                 : null,
             isThreeLine: session != null,
           ),
@@ -73,18 +72,6 @@ class _DevScreenState extends ConsumerState<DevScreen> {
           // Quick actions
           const _SectionHeader('Quick Actions'),
           _ActionTile(
-            icon: Icons.person_add,
-            title: 'Activate with test NIF',
-            subtitle: 'Activate device using 12345678Z',
-            loading: _loading,
-            onTap: () => _runAction(() async {
-              await ref
-                  .read(authProvider.notifier)
-                  .activate('12345678Z', null);
-              return 'Activation complete';
-            }),
-          ),
-          _ActionTile(
             icon: Icons.pin,
             title: 'Request PIN',
             subtitle: 'Request a new PIN from the bridge',
@@ -93,9 +80,7 @@ class _DevScreenState extends ConsumerState<DevScreen> {
                 ? null
                 : () => _runAction(() async {
                       final result = await bridge.requestPin();
-                      return 'PIN: ${result.pin}\n'
-                          'TTL: ${result.timeToLiveSeconds}s\n'
-                          'NIF: ${result.nif}';
+                      return result.ok ? result.data : 'Error: ${result.error}';
                     }),
           ),
           _ActionTile(
@@ -108,8 +93,7 @@ class _DevScreenState extends ConsumerState<DevScreen> {
               return 'Active: ${s.active}\n'
                   'NIF: ${s.nif}\n'
                   'Device: ${s.deviceId}\n'
-                  'Created: ${s.createdAt}\n'
-                  'Firebase: ${s.hasFirebaseToken}';
+                  'Created: ${s.createdAt}';
             }),
           ),
           _ActionTile(

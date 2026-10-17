@@ -9,6 +9,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../src/api_helpers.dart';
 import '../src/llave_bridge.dart';
 import '../src/routes.dart';
+import '../widgets/request_card.dart';
 
 /// Whether the current platform supports camera-based QR scanning.
 bool get _hasCameraSupport => Platform.isAndroid || Platform.isIOS;
@@ -26,6 +27,12 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
   String? _error;
   bool _success = false;
   bool _useManualInput = false;
+  bool _answering = false;
+  Map<String, dynamic>? _request;
+
+  /// Last value sent to the server. The camera keeps seeing the code on
+  /// the website, so the same value is not submitted twice.
+  String? _lastValue;
 
   @override
   void initState() {
@@ -41,6 +48,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
 
   Future<void> _authenticate(String value) async {
     if (value.trim().isEmpty) return;
+    _lastValue = value.trim();
 
     setState(() {
       _loading = true;
@@ -48,10 +56,8 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
       _success = false;
     });
 
-    final bridge = ref.read(llaveBridgeProvider);
-
     await handleApiCall(
-      apiCall: () => bridge.qrAuthenticate(value.trim()),
+      apiCall: () => ref.read(llaveBridgeProvider).qrAuthenticate(value.trim()),
       setLoading: (v) {
         if (mounted) setState(() => _loading = v);
       },
@@ -59,124 +65,61 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
         if (mounted) setState(() => _error = e);
       },
       context: context,
-      onData: (decoded) async {
-        final l10n = AppLocalizations.of(context)!;
-        final peticion = decoded is Map<String, dynamic>
-            ? (decoded['peticion'] as Map<String, dynamic>?)
-            : null;
-
-        if (peticion == null) {
-          setState(() => _error = l10n.invalidPetitionData);
+      onData: (decoded) {
+        if (!mounted) return;
+        final peticion = decoded is Map<String, dynamic> ? decoded['peticion'] : null;
+        if (peticion is! Map<String, dynamic>) {
+          setState(() => _error = AppLocalizations.of(context)!.invalidPetitionData);
           return;
         }
-
-        final token = peticion['tokenClaveMovil'] as String? ?? '';
-        final idpCode = peticion['codigoIdP'] as String? ?? '';
-        final organismo = peticion['organismo'] as String? ?? '';
-        final tipo = peticion['tipo'] as String? ?? '';
-
-        setState(() => _loading = false);
-
-        if (!mounted) return;
-        final confirmed = await _showConfirmDialog(organismo, tipo);
-        if (!mounted) return;
-
-        if (confirmed == true) {
-          await _confirmRequest(bridge, token, idpCode);
-        } else {
-          await _rejectRequest(bridge, token, idpCode);
-        }
+        // The scan only creates the request; the user still has to pass the
+        // security check before it is confirmed.
+        setState(() => _request = peticion);
       },
     );
   }
 
-  Future<bool?> _showConfirmDialog(String organismo, String tipo) {
-    final l10n = AppLocalizations.of(context)!;
-    return showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.verified_user, size: 40),
-        title: Text(l10n.confirmAuthTitle),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(l10n.authRequestReceived),
-            const SizedBox(height: 16),
-            if (organismo.isNotEmpty) ...[
-              Text(l10n.organizationLabel, style: Theme.of(ctx).textTheme.labelSmall),
-              Text(organismo, style: Theme.of(ctx).textTheme.bodyLarge),
-              const SizedBox(height: 8),
-            ],
-            if (tipo.isNotEmpty) ...[
-              Text(l10n.typeLabel, style: Theme.of(ctx).textTheme.labelSmall),
-              Text(tipo, style: Theme.of(ctx).textTheme.bodyLarge),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.reject),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.confirm),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<void> _answer({required bool confirm}) async {
+    final request = _request;
+    if (request == null) return;
+    final token = request['tokenClaveMovil']?.toString() ?? '';
+    final code = request['codigoIdP']?.toString() ?? '';
+    final bridge = ref.read(llaveBridgeProvider);
 
-  Future<void> _confirmRequest(
-      LlaveBridge bridge, String token, String idpCode) async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
+    setState(() => _answering = true);
     await handleApiCall(
-      apiCall: () => bridge.confirmRequest(token, idpCode),
+      apiCall: () => confirm
+          ? bridge.confirmRequest(token, code)
+          : bridge.rejectRequest(token, code),
       setLoading: (v) {
-        if (mounted) setState(() => _loading = v);
+        if (mounted) setState(() => _answering = v);
       },
       setError: (e) {
         if (mounted) setState(() => _error = e);
       },
       context: context,
       onData: (_) {
-        setState(() => _success = true);
+        if (!mounted) return;
+        if (!confirm) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(AppLocalizations.of(context)!.requestRejected)),
+          );
+        }
+        setState(() => _success = confirm);
       },
     );
-  }
-
-  Future<void> _rejectRequest(
-      LlaveBridge bridge, String token, String idpCode) async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    try {
-      await bridge.rejectRequest(token, idpCode);
-    } catch (_) {
-      // Rejection errors are not critical.
-    }
-
     if (!mounted) return;
     setState(() {
-      _loading = false;
-      _error = null;
-      _success = false;
+      _request = null;
+      _controller.clear();
     });
   }
 
   void _onQrDetected(BarcodeCapture capture) {
-    if (_loading || _success) return;
-    final barcode = capture.barcodes.firstOrNull;
-    if (barcode?.rawValue == null) return;
-    _authenticate(barcode!.rawValue!);
+    if (_loading || _success || _request != null) return;
+    final value = capture.barcodes.firstOrNull?.rawValue?.trim();
+    if (value == null || value == _lastValue) return;
+    _authenticate(value);
   }
 
   @override
@@ -201,11 +144,23 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
             ),
         ],
       ),
-      body: _success
-          ? _buildSuccessView(theme, l10n)
-          : _useManualInput
-              ? _buildManualInput(theme, l10n)
-              : _buildCameraScanner(theme, l10n),
+      body: _request != null
+          ? Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: RequestCard(
+                  request: _request!,
+                  busy: _answering,
+                  onConfirm: () => _answer(confirm: true),
+                  onReject: () => _answer(confirm: false),
+                ),
+              ),
+            )
+          : _success
+              ? _buildSuccessView(theme, l10n)
+              : _useManualInput
+                  ? _buildManualInput(theme, l10n)
+                  : _buildCameraScanner(theme, l10n),
     );
   }
 

@@ -116,7 +116,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
     if (confirmed == true) {
       await BiometricService.disable();
       await ref.read(authProvider.notifier).logout();
-      if (mounted) context.go(AppRoutes.activate);
+      if (mounted) context.go(AppRoutes.dniAuth);
     }
   }
 

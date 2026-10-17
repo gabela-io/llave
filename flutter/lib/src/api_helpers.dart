@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 
+import 'auth_provider.dart';
+import 'errors.dart';
 import 'ip_rate_limit.dart';
 import 'llave_bridge.dart';
 
@@ -34,27 +37,32 @@ Future<void> handleApiCall({
   required BuildContext context,
   FutureOr<void> Function(dynamic decoded)? onData,
 }) async {
+  // Resolve localisations before the async gap so the context is not used
+  // after it may have been unmounted.
+  final l10n = AppLocalizations.of(context);
+  final auth = ProviderScope.containerOf(context, listen: false).read(authProvider.notifier);
   try {
     final result = await apiCall();
     if (!result.ok) {
-      final l10n = AppLocalizations.of(context);
-      final err = result.error ?? l10n?.unknownError ?? 'Unknown error';
-      setError(err);
-      if (context.mounted && isIpRateLimited(err)) {
+      setError(l10n != null
+          ? friendlyError(l10n, result)
+          : result.error ?? 'Unknown error');
+      if (context.mounted && isIpRateLimited(result.error)) {
         showIpRateLimitBanner(context);
       }
+      await auth.reportFailure(result);
       return;
     }
     final decoded = tryJsonDecode(result.data);
     if (decoded == null) {
-      final l10n = AppLocalizations.of(context);
       setError(l10n?.invalidResponse ?? 'Invalid response from server');
       return;
     }
     await onData?.call(decoded);
   } catch (e) {
     final err = e.toString();
-    setError(err);
+    debugPrint('API call failed: $err');
+    setError(l10n?.errorUnexpected ?? err);
     if (context.mounted && isIpRateLimited(err)) {
       showIpRateLimitBanner(context);
     }

@@ -135,7 +135,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
         deviceId: status.deviceId!,
         nif: status.nif!,
         createdAt: status.createdAt!,
-        hasFirebaseToken: status.hasFirebaseToken,
       ));
     } else {
       _log.info('no session');
@@ -143,27 +142,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// Activate device and transition to [AuthNeedsPin] so the user sets a PIN.
-  Future<void> activate(String nif, String? password) async {
-    _log.info('activating device');
-    state = const AuthLoading();
-    try {
-      await _bridge.activateDevice(nif, password);
-      _log.info('device activated — prompting for PIN setup');
-      state = const AuthNeedsPin();
-    } catch (e) {
-      _log.severe('activation failed: $e');
-      state = AuthError(e.toString());
-    }
-  }
-
   /// Phase 1: DNI/NIE auth → registration check → request SMS code.
-  Future<LlaveApiResult> dniAuthenticate(
-      String nif, String fecha, String soporte) async {
+  Future<LlaveApiResult> dniAuthenticate(String nif, String fecha, String soporte,
+      {String challenge = ''}) async {
     _log.info('authenticating via DNI/NIE (phase 1: request SMS)');
     state = const AuthLoading();
     try {
-      final result = await _bridge.dniAuthenticate(nif, fecha, soporte);
+      final result = await _bridge.dniAuthenticate(nif, fecha, soporte, challenge: challenge);
       if (result.ok) {
         _log.info('DNI/NIE auth succeeded — SMS sent');
         state = const AuthUnauthenticated();
@@ -215,18 +200,32 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = const AuthUnauthenticated();
   }
 
-  /// Deactivate device remotely, then log out.
-  Future<void> deactivate() async {
+  /// Deactivate the device on the server, then forget it locally.
+  ///
+  /// Like the app, the local credentials are deleted only when the server
+  /// confirms (or reports the device as already revoked); otherwise they
+  /// are kept so the user can retry. Returns the server result.
+  Future<LlaveApiResult> deactivate() async {
     _log.info('deactivating device');
-    try {
-      await _bridge.deactivate();
-    } catch (e) {
-      _log.warning('remote deactivation failed: $e');
+    final result = await _bridge.deactivate();
+    if (result.ok || result.errorCode == deviceRevokedCode) {
+      await logout();
+    } else {
+      _log.warning('remote deactivation failed: ${result.error}');
     }
-    await BiometricService.disable();
-    await SecureSessionStore.delete();
-    state = const AuthUnauthenticated();
+    return result;
   }
+
+  /// React to a failed call: a device revoked by the server (105/109) is
+  /// forgotten locally, as the app does.
+  Future<void> reportFailure(LlaveApiResult result) async {
+    if (result.errorCode != deviceRevokedCode) return;
+    _log.warning('device revoked by the server — forgetting it');
+    await logout();
+  }
+
+  /// Error kind the core uses for a device revoked by the server.
+  static const deviceRevokedCode = 'device_revoked';
 }
 
 /// Auth state provider.

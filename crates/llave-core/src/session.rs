@@ -9,8 +9,11 @@ pub struct Session {
     pub device_id: String,
     pub nif: String,
     pub device_password: Zeroizing<String>,
-    pub firebase_token: Option<String>,
     pub created_at: String,
+    /// Last `peticion.timestamp` seen while polling (`ClaveRequestAllOperationsSv`
+    /// cursor).  Absent in sessions saved by older versions.
+    #[serde(default)]
+    pub poll_cursor: Option<String>,
 }
 
 impl fmt::Debug for Session {
@@ -19,7 +22,6 @@ impl fmt::Debug for Session {
             .field("device_id", &self.device_id)
             .field("nif", &self.nif)
             .field("device_password", &"[REDACTED]")
-            .field("firebase_token", &self.firebase_token)
             .field("created_at", &self.created_at)
             .finish()
     }
@@ -72,9 +74,16 @@ mod tests {
             device_id: "dev-123".into(),
             nif: "12345678Z".into(),
             device_password: Zeroizing::new("secret-pass".into()),
-            firebase_token: Some("fb-token".into()),
             created_at: "2024-01-01T00:00:00Z".into(),
+            poll_cursor: None,
         }
+    }
+
+    #[test]
+    fn session_without_poll_cursor_still_loads() {
+        let json = r#"{"device_id":"d","nif":"12345678Z","device_password":"p","firebase_token":null,"created_at":"x"}"#;
+        let session: Session = serde_json::from_str(json).unwrap();
+        assert_eq!(session.poll_cursor, None);
     }
 
     #[test]
@@ -85,7 +94,6 @@ mod tests {
         assert_eq!(restored.device_id, "dev-123");
         assert_eq!(restored.nif, "12345678Z");
         assert_eq!(&*restored.device_password, "secret-pass");
-        assert_eq!(restored.firebase_token.as_deref(), Some("fb-token"));
         assert_eq!(restored.created_at, "2024-01-01T00:00:00Z");
     }
 
@@ -97,12 +105,11 @@ mod tests {
     }
 
     #[test]
-    fn none_firebase_token_roundtrip() {
-        let mut session = sample_session();
-        session.firebase_token = None;
-        let json = serde_json::to_string(&session).unwrap();
-        let restored: Session = serde_json::from_str(&json).unwrap();
-        assert!(restored.firebase_token.is_none());
+    fn session_from_older_versions_still_loads() {
+        // Sessions saved before push support was dropped carry `firebase_token`.
+        let json = r#"{"device_id":"d","nif":"12345678Z","device_password":"p","firebase_token":"t","created_at":"x"}"#;
+        let session: Session = serde_json::from_str(json).unwrap();
+        assert_eq!(session.device_id, "d");
     }
 
     #[test]
@@ -119,7 +126,6 @@ mod tests {
         let debug = format!("{:?}", session);
         assert!(debug.contains("dev-123"));
         assert!(debug.contains("12345678Z"));
-        assert!(debug.contains("fb-token"));
         assert!(debug.contains("2024-01-01T00:00:00Z"));
     }
 }

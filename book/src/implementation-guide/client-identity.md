@@ -1,91 +1,73 @@
 # Client Identity
 
-The AEAT server validates the client identity through HTTP headers. Getting these wrong causes silent failures or WAF rejections.
+The AEAT server recognises the client from HTTP headers and from a few form fields. If these are wrong, requests fail silently or the WAF rejects them.
 
 ## User-Agent Format
 
-The format must exactly match the official Android app:
+Built by `DeviceUtils.getUserAgent()`:
 
 ```
-APPMovil/Cl@ve/v{version}({build})/{os_version}/Android/{dalvik_agent}
+APPMovil/Cl@ve/v{version}({build})/{Build.VERSION.RELEASE}/Android/{System.getProperty("http.agent")}
 ```
 
-Concrete value used:
+Value used by llave (app 6.2.10, build 294):
 
 ```
-APPMovil/Cl@ve/v6.2.5(288)/14/Android/Dalvik/2.1.0 (Linux; U; Android 14; SM-S928U Build/UP1A.231005.007)
+APPMovil/Cl@ve/v6.2.10(294)/14/Android/Dalvik/2.1.0 (Linux; U; Android 14; SM-S928U Build/UP1A.231005.007)
 ```
 
 | Component | Value | Source |
 |-----------|-------|--------|
-| App identifier | `APPMovil/Cl@ve` | Hardcoded in app |
-| Version | `v6.2.5(288)` | `APP_VERSION` = `6.2.5`, build 288 |
-| OS version | `14` | Android 14 |
+| App identifier | `APPMovil/Cl@ve` | Hardcoded |
+| Version | `v6.2.10(294)` | `getVersionAppForUserAgent()` |
+| OS version | `14` | `Build.VERSION.RELEASE` |
 | Platform | `Android` | Hardcoded |
-| Dalvik agent | `Dalvik/2.1.0 (Linux; U; Android 14; SM-S928U Build/UP1A.231005.007)` | `System.getProperty("http.agent")` on Android |
+| Dalvik agent | `Dalvik/2.1.0 (Linux; U; Android 14; SM-S928U Build/UP1A.231005.007)` | `http.agent`; uses the bare `Build.MODEL` |
 
-> **Critical**: The full Dalvik user-agent suffix (including the parenthetical
-> with Linux, device model, and build number) is **required**. A truncated
-> User-Agent (e.g., just `APPMovil/Cl@ve/v6.2.5(288)/14/Android/Dalvik/2.1.0`)
-> causes the server's WAF to reject the request with a "Pagina no habilitada en
-> internet publico" (page not enabled on public internet) error page. This was
-> one of the hardest issues to diagnose during reverse engineering.
+> **Critical**: The full Dalvik suffix, including the parenthetical with Linux,
+> device model and build number, is **required**. With a truncated User-Agent
+> (e.g. just `APPMovil/Cl@ve/v6.2.10(294)/14/Android/Dalvik/2.1.0`), the WAF
+> answers with a "Página no habilitada en internet público" error page.
+
+## Form Fields Identifying the Client
+
+Most `MOVI-P24H` endpoints repeat the client identity in the body:
+
+| Field | Value | App source |
+|-------|-------|------------|
+| `version_app` | `6.2.10` | `DeviceUtils.getVersionApp()`. Must match the User-Agent version |
+| `sistema_operativo` | `A` | `getSoReduced()` (Android) |
+| `version_os` | `14` | `Build.VERSION.RELEASE` |
+| `modelo` | `Samsung SM-S928U` | `getDeviceName()` (see below) |
+
+`modelo` is **not** the bare model. `getDeviceName()` returns the capitalised `Build.MANUFACTURER` + `" "` + `Build.MODEL`. If the model already starts with the manufacturer name, it returns just the capitalised model. llave sends `Samsung SM-S928U`. The same fields form the JSON body of `SetCookieAppMovil`, which sets the `appmovil` cookie.
+
+Error `500600` means the server considers the app version outdated (llave: `LlaveError::AppVersionOutdated`).
 
 ## Default Headers
 
-Every request includes:
-
 | Header | Value |
 |--------|-------|
-| `User-Agent` | Full Android app user agent (see above) |
+| `User-Agent` | Full app User-Agent (see above) |
 | `Accept` | `application/json` |
 | `Accept-Language` | `es_ES` |
-| `Cookie` | All managed cookies (see [Cookie Management](./cookie-management.md)) |
-| `TrazasApp` | JSON cookie diagnostic object (see below) |
+| `Cookie` | Explicit per-request header with every stored cookie except `JSESSIONID` (see [Cookie Management](./cookie-management.md)) |
+| `Content-Type` | `application/x-www-form-urlencoded` for form endpoints; `application/json; charset=UTF-8` for JSON endpoints (`SetCookieAppMovil`, certificate registration); **absent** for `ObtenerClaveMovilSMS` (empty body) |
+
+The app also sends `If-Modified-Since`, but only when it downloads the carousel.
 
 ## The TrazasApp Header
 
-Every request includes a custom `TrazasApp` header containing a JSON object that mirrors the Android app's internal `getCookiesInApp()` method. This header serialises the current cookie state for server-side diagnostics and legitimacy checks.
+**Not sent.** Cl@ve 6.2.10 has no `TrazasApp` header, `getCookiesInApp` or `cookiesWww*Gestor` structure. Earlier versions of this book said a JSON cookie-diagnostic header went out "with every request", but it cannot be confirmed for any app version, and llave has removed it.
 
-### Structure
+## Transport
 
-```json
-{
-  "cookiesWww1Gestor":          "{CERT_WWW1} y {CERT_WWW1V}",
-  "cookiesWww6Gestor":          "{pin24H} y {pin24V}",
-  "cookiesWww12Gestor":         "{WWW12} y {WWW12V}",
-  "cookiesAppMovilGestor":      "{appmovil}",
-  "cookiesSgatLanguageGestor":  "{sgat-language}",
-  "cookiesWww1Local":           "{CERT_WWW1} y {CERT_WWW1V}",
-  "cookiesWww6Local":           "{pin24H} y {pin24V}",
-  "cookiesWww12Local":          "{WWW12} y {WWW12V}",
-  "cookiesAppMovilLocal":       "{appmovil}",
-  "cookiesSgatLanguageLocal":   "{sgat-language}"
-}
-```
+The app's `SecuredHttpClient` settings, which llave mirrors:
 
-- **`*Gestor`** fields: Cookie values from the app's cookie jar (runtime).
-- **`*Local`** fields: Cookie values from the device's keychain storage (persisted). In practice, both contain the same values.
-- **`" y "` separator**: Cookie value pairs are joined with the literal string ` y ` (Spanish for "and").
-- **`"null"`**: When a cookie is not set, its value is the literal string `"null"`.
-
-### Example (early in flow, before SMS validation)
-
-```json
-{
-  "cookiesWww1Gestor":          "null y null",
-  "cookiesWww6Gestor":          "null y null",
-  "cookiesWww12Gestor":         "4C8937...== y 20260310-15105322",
-  "cookiesAppMovilGestor":      "eyJhcHAiOiJjbGF2ZSI...",
-  "cookiesSgatLanguageGestor":  "es_ES",
-  "cookiesWww1Local":           "null y null",
-  "cookiesWww6Local":           "null y null",
-  "cookiesWww12Local":          "4C8937...== y 20260310-15105322",
-  "cookiesAppMovilLocal":       "eyJhcHAiOiJjbGF2ZSI...",
-  "cookiesSgatLanguageLocal":   "es_ES"
-}
-```
-
-### Implementation Notes
-
-While the server may not strictly validate every field of the `TrazasApp` header, omitting the header entirely may cause requests to be rejected. It is sent with every request as a form of telemetry.
+| Setting | Value |
+|---------|-------|
+| TLS | 1.2 or newer |
+| Connect timeout | 30 s |
+| Read / write timeout | 190 s (llave: 190 s overall request timeout) |
+| Redirects | Followed like OkHttp, at most 20 (see [Redirect Handling](./redirect-handling.md)) |
+| Cookie store | None in the HTTP client; cookies are managed by hand |

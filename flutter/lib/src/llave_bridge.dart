@@ -1,24 +1,23 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// Generated FFI bindings — available after running flutter_rust_bridge_codegen.
+// Hand-written dart:ffi bindings to the C ABI of llave-core-ffi.
 import 'rust/api/api.dart' as ffi;
 
 // ---------------------------------------------------------------------------
-// Dart-side models mirroring the FFI types from llave-core-ffi.
-// These will be replaced by flutter_rust_bridge generated types after codegen.
+// Dart-side models of the FFI results, shared by the native and mock bridges.
 // ---------------------------------------------------------------------------
 
 class LlaveSession {
   final String deviceId;
   final String nif;
   final String createdAt;
-  final bool hasFirebaseToken;
 
   const LlaveSession({
     required this.deviceId,
     required this.nif,
     required this.createdAt,
-    this.hasFirebaseToken = false,
   });
 }
 
@@ -27,42 +26,55 @@ class LlaveStatus {
   final String? nif;
   final String? deviceId;
   final String? createdAt;
-  final bool hasFirebaseToken;
 
   const LlaveStatus({
     required this.active,
     this.nif,
     this.deviceId,
     this.createdAt,
-    this.hasFirebaseToken = false,
   });
 
   const LlaveStatus.inactive()
       : active = false,
         nif = null,
         deviceId = null,
-        createdAt = null,
-        hasFirebaseToken = false;
-}
-
-class LlavePinResult {
-  final String pin;
-  final String timeToLiveSeconds;
-  final String nif;
-
-  const LlavePinResult({
-    required this.pin,
-    required this.timeToLiveSeconds,
-    required this.nif,
-  });
+        createdAt = null;
 }
 
 class LlaveApiResult {
   final bool ok;
   final String data;
+
+  /// English error text, for logs.
   final String? error;
 
-  const LlaveApiResult({required this.ok, required this.data, this.error});
+  /// Stable error kind from the core (`no_pending_pin`, `api`, …), used to
+  /// show a localised message (see `friendlyError`).
+  final String? errorCode;
+
+  /// The AEAT server's own message for a `KO`.
+  final String? serverMessage;
+
+  const LlaveApiResult({
+    required this.ok,
+    required this.data,
+    this.error,
+    this.errorCode,
+    this.serverMessage,
+  });
+
+  /// A failure from an exception thrown on the Dart side (for example the
+  /// native library), rather than an error reported by the core.
+  factory LlaveApiResult.exception(Object e) =>
+      LlaveApiResult(ok: false, data: '', error: e.toString(), errorCode: 'exception');
+
+  factory LlaveApiResult.fromFfi(ffi.FfiApiResult r) => LlaveApiResult(
+        ok: r.ok,
+        data: r.data,
+        error: r.error,
+        errorCode: r.errorCode,
+        serverMessage: r.serverMessage,
+      );
 }
 
 class LlaveNifCheckResult {
@@ -80,8 +92,8 @@ class LlaveNifCheckResult {
 // ---------------------------------------------------------------------------
 // Bridge service interface.
 //
-// MockLlaveBridge is used until flutter_rust_bridge codegen is run.
-// Then swap to RealLlaveBridge which calls the generated FFI functions.
+// RealLlaveBridge calls the Rust core; MockLlaveBridge fakes it for UI work
+// and tests. `bridgeTypeProvider` picks one.
 // ---------------------------------------------------------------------------
 
 abstract class LlaveBridge {
@@ -92,8 +104,9 @@ abstract class LlaveBridge {
   /// Export the current session as JSON for secure storage persistence.
   String? exportSession();
 
-  Future<LlaveSession> activateDevice(String nif, String? password);
-  Future<LlavePinResult> requestPin();
+  /// Reveal the pending PIN: `data` is `{pin, time_to_live_seconds, nif}`;
+  /// `time_to_live_seconds` is empty when the server sent no validity.
+  Future<LlaveApiResult> requestPin();
   LlaveStatus getStatus();
   Future<LlaveNifCheckResult> checkNif(String? nif);
   Future<LlaveApiResult> getMyData();
@@ -103,11 +116,22 @@ abstract class LlaveBridge {
   Future<LlaveApiResult> rejectRequest(String token, String idpCode);
   Future<LlaveApiResult> qrAuthenticate(String value);
   Future<LlaveApiResult> deactivate();
-  Future<LlaveApiResult> dniAuthenticate(String nif, String fecha, String soporte);
+  /// Phase 1 of activation. On a date-of-birth challenge the result fails
+  /// with `data = {"challenge": …}`; call again with the date of birth as
+  /// [fecha] and that [challenge].
+  Future<LlaveApiResult> dniAuthenticate(String nif, String fecha, String soporte,
+      {String challenge = ''});
   Future<LlaveApiResult> dniCompleteActivation(String nif, String cookiesJson,
       String timestampAltaSms, String tokenClaveMovilSms, String smsPin);
   bool logout();
   String validateNif(String nif);
+
+  /// llave's version and the Cl@ve app version it matches.
+  String version();
+
+  /// Document field needed for [nif]: `validity_date`, `birth_date` or
+  /// `support_number`. Throws when the NIF is invalid.
+  String dniInput(String nif);
 
   /// Encrypt the current in-memory session with a PIN.
   String encryptSession(String pin);
@@ -138,29 +162,13 @@ class MockLlaveBridge implements LlaveBridge {
   }
 
   @override
-  Future<LlaveSession> activateDevice(String nif, String? password) async {
-    // Simulate network delay
-    await Future<void>.delayed(const Duration(seconds: 1));
-
-    final validated = validateNif(nif);
-
-    _session = LlaveSession(
-      deviceId: 'mock-device-${DateTime.now().millisecondsSinceEpoch}',
-      nif: validated,
-      createdAt: DateTime.now().toIso8601String(),
-    );
-    return _session!;
-  }
-
-  @override
-  Future<LlavePinResult> requestPin() async {
+  Future<LlaveApiResult> requestPin() async {
     _requireSession();
     await Future<void>.delayed(const Duration(milliseconds: 800));
     final pin = (100000 + (DateTime.now().microsecond % 900000)).toString();
-    return LlavePinResult(
-      pin: pin,
-      timeToLiveSeconds: '180',
-      nif: _session!.nif,
+    return LlaveApiResult(
+      ok: true,
+      data: jsonEncode({'pin': pin, 'time_to_live_seconds': '180', 'nif': _session!.nif}),
     );
   }
 
@@ -172,7 +180,6 @@ class MockLlaveBridge implements LlaveBridge {
       nif: _session!.nif,
       deviceId: _session!.deviceId,
       createdAt: _session!.createdAt,
-      hasFirebaseToken: _session!.hasFirebaseToken,
     );
   }
 
@@ -193,7 +200,7 @@ class MockLlaveBridge implements LlaveBridge {
     await Future<void>.delayed(const Duration(milliseconds: 600));
     return const LlaveApiResult(
       ok: true,
-      data: '{"nombre":"Mock User","telefono":"***1234","nivelAcceso":"AVANZADO"}',
+      data: '{"nif":"12345678Z","email":"mock@example.com","numTelefono":"***1234","nivelRegistro":"AVANZADO"}',
     );
   }
 
@@ -208,7 +215,8 @@ class MockLlaveBridge implements LlaveBridge {
   Future<LlaveApiResult> getPendingRequests() async {
     _requireSession();
     await Future<void>.delayed(const Duration(milliseconds: 400));
-    return const LlaveApiResult(ok: true, data: '{"pending":[]}');
+    // Same shape as the real bridge: the pending `peticion` or null.
+    return const LlaveApiResult(ok: true, data: 'null');
   }
 
   @override
@@ -229,7 +237,10 @@ class MockLlaveBridge implements LlaveBridge {
   Future<LlaveApiResult> qrAuthenticate(String value) async {
     _requireSession();
     await Future<void>.delayed(const Duration(milliseconds: 500));
-    return const LlaveApiResult(ok: true, data: '{"authenticated":true}');
+    return const LlaveApiResult(
+      ok: true,
+      data: '{"peticion":{"tokenClaveMovil":"mock-token","codigoIdP":"4821","organismo":"Agencia Tributaria"}}',
+    );
   }
 
   @override
@@ -244,7 +255,8 @@ class MockLlaveBridge implements LlaveBridge {
   }
 
   @override
-  Future<LlaveApiResult> dniAuthenticate(String nif, String fecha, String soporte) async {
+  Future<LlaveApiResult> dniAuthenticate(String nif, String fecha, String soporte,
+      {String challenge = ''}) async {
     await Future<void>.delayed(const Duration(milliseconds: 800));
     return const LlaveApiResult(
       ok: true,
@@ -281,10 +293,23 @@ class MockLlaveBridge implements LlaveBridge {
       throw ArgumentError('NIF must be 8-9 characters');
     }
     final first = trimmed[0];
-    if (!RegExp(r'[0-9XYZ]').hasMatch(first)) {
-      throw ArgumentError('NIF must start with 0-9, X, Y, or Z');
+    if (!RegExp(r'[0-9KLMXYZ]').hasMatch(first)) {
+      throw ArgumentError('NIF must start with 0-9, K, L, M, X, Y or Z');
     }
     return trimmed;
+  }
+
+  @override
+  String version() => 'mock';
+
+  @override
+  String dniInput(String nif) {
+    // Mirrors llave_core::config::required_dni_input for UI development.
+    return switch (validateNif(nif)[0]) {
+      'K' || 'L' || 'M' => 'birth_date',
+      'X' || 'Y' || 'Z' => 'support_number',
+      _ => 'validity_date',
+    };
   }
 
   @override
@@ -318,7 +343,7 @@ class MockLlaveBridge implements LlaveBridge {
 }
 
 // ---------------------------------------------------------------------------
-// Real bridge calling into Rust via flutter_rust_bridge FFI.
+// Real bridge calling into the Rust core through the C ABI.
 // ---------------------------------------------------------------------------
 
 class RealLlaveBridge implements LlaveBridge {
@@ -331,25 +356,8 @@ class RealLlaveBridge implements LlaveBridge {
   String? exportSession() => ffi.exportSession();
 
   @override
-  Future<LlaveSession> activateDevice(String nif, String? password) async {
-    final s = await ffi.activateDevice(nif: nif, password: password);
-    return LlaveSession(
-      deviceId: s.deviceId,
-      nif: s.nif,
-      createdAt: s.createdAt,
-      hasFirebaseToken: s.hasFirebaseToken,
-    );
-  }
-
-  @override
-  Future<LlavePinResult> requestPin() async {
-    final r = await ffi.requestPin();
-    return LlavePinResult(
-      pin: r.pin,
-      timeToLiveSeconds: r.timeToLiveSeconds,
-      nif: r.nif,
-    );
-  }
+  Future<LlaveApiResult> requestPin() async =>
+      LlaveApiResult.fromFfi(await ffi.requestPin());
 
   @override
   LlaveStatus getStatus() {
@@ -359,7 +367,6 @@ class RealLlaveBridge implements LlaveBridge {
       nif: s.nif,
       deviceId: s.deviceId,
       createdAt: s.createdAt,
-      hasFirebaseToken: s.hasFirebaseToken,
     );
   }
 
@@ -376,49 +383,51 @@ class RealLlaveBridge implements LlaveBridge {
   @override
   Future<LlaveApiResult> getMyData() async {
     final r = await ffi.getMyData();
-    return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
+    return LlaveApiResult.fromFfi(r);
   }
 
   @override
   Future<LlaveApiResult> getHistory() async {
     final r = await ffi.getHistory();
-    return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
+    return LlaveApiResult.fromFfi(r);
   }
 
   @override
   Future<LlaveApiResult> getPendingRequests() async {
     final r = await ffi.getPendingRequests();
-    return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
+    return LlaveApiResult.fromFfi(r);
   }
 
   @override
   Future<LlaveApiResult> confirmRequest(String token, String idpCode) async {
     final r = await ffi.confirmRequest(token: token, idpCode: idpCode);
-    return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
+    return LlaveApiResult.fromFfi(r);
   }
 
   @override
   Future<LlaveApiResult> rejectRequest(String token, String idpCode) async {
     final r = await ffi.rejectRequest(token: token, idpCode: idpCode);
-    return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
+    return LlaveApiResult.fromFfi(r);
   }
 
   @override
   Future<LlaveApiResult> qrAuthenticate(String value) async {
     final r = await ffi.qrAuthenticate(value: value);
-    return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
+    return LlaveApiResult.fromFfi(r);
   }
 
   @override
   Future<LlaveApiResult> deactivate() async {
     final r = await ffi.deactivate();
-    return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
+    return LlaveApiResult.fromFfi(r);
   }
 
   @override
-  Future<LlaveApiResult> dniAuthenticate(String nif, String fecha, String soporte) async {
-    final r = await ffi.dniAuthenticate(nif: nif, fecha: fecha, soporte: soporte);
-    return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
+  Future<LlaveApiResult> dniAuthenticate(String nif, String fecha, String soporte,
+      {String challenge = ''}) async {
+    final r = await ffi.dniAuthenticate(
+        nif: nif, fecha: fecha, soporte: soporte, challenge: challenge);
+    return LlaveApiResult.fromFfi(r);
   }
 
   @override
@@ -430,7 +439,7 @@ class RealLlaveBridge implements LlaveBridge {
         timestampAltaSms: timestampAltaSms,
         tokenClaveMovilSms: tokenClaveMovilSms,
         smsPin: smsPin);
-    return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
+    return LlaveApiResult.fromFfi(r);
   }
 
   @override
@@ -438,6 +447,12 @@ class RealLlaveBridge implements LlaveBridge {
 
   @override
   String validateNif(String nif) => ffi.validateNif(nif: nif);
+
+  @override
+  String version() => ffi.version();
+
+  @override
+  String dniInput(String nif) => ffi.dniInput(nif: nif);
 
   @override
   String encryptSession(String pin) => ffi.encryptSession(pin: pin);

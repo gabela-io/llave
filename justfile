@@ -36,8 +36,8 @@ build-release:
 check:
     cargo check
 
-# Run clippy on the workspace
-lint:
+# Check formatting and run clippy on the workspace
+lint: fmt-check
     cargo clippy -- -D warnings
 
 # Format code
@@ -131,3 +131,45 @@ flutter-clean:
 
 # Clean everything
 clean-all: clean flutter-clean
+
+# --- Release ---
+
+# Needs a clean tree and flutter/android/key.properties (release keystore);
+# runs every check, then builds a static Linux CLI, the signed APK and
+# SHA256SUMS.
+# Build the signed release artifacts into dist/v<version>
+release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "llave-cli") | .version')
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "Commit or stash your changes first." >&2; exit 1
+    fi
+    if [ ! -f flutter/android/key.properties ]; then
+        echo "Missing flutter/android/key.properties (release keystore)." >&2; exit 1
+    fi
+
+    just test lint
+    (cd flutter && flutter analyze && flutter test)
+    git checkout -- flutter/analysis_options.yaml flutter/linux/flutter/generated_plugins.cmake
+
+    cargo build -p llave-cli --release --target x86_64-unknown-linux-musl
+    (cd flutter && flutter build apk --release)
+    git checkout -- flutter/analysis_options.yaml flutter/linux/flutter/generated_plugins.cmake
+
+    dist="dist/v$version"
+    rm -rf "$dist" && mkdir -p "$dist"
+    cp target/x86_64-unknown-linux-musl/release/llave "$dist/llave-$version-linux-x86_64"
+    cp flutter/build/app/outputs/flutter-apk/app-release.apk "$dist/llave-$version.apk"
+
+    build_tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+    if ! "$build_tools/aapt2" dump badging "$dist/llave-$version.apk" | grep -q "versionName='$version'"; then
+        echo "The APK does not carry version $version (see flutter/android/local.properties)." >&2; exit 1
+    fi
+    "$build_tools/apksigner" verify --print-certs "$dist/llave-$version.apk" | grep -E 'Signer #1 certificate (DN|SHA-256)'
+    if "$build_tools/apksigner" verify --print-certs "$dist/llave-$version.apk" | grep -q 'CN=Android Debug'; then
+        echo "The APK is signed with the debug key; check flutter/android/key.properties." >&2; exit 1
+    fi
+    (cd "$dist" && sha256sum llave-* > SHA256SUMS)
+    echo "Release artifacts in $dist:"
+    ls -l "$dist"

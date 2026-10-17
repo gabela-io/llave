@@ -42,3 +42,9 @@ flutter/android/*.keystore
 Thumbs.db
 
 apk/
+
+# Reverse engineering workspace
+/.cooking/
+
+# Release artifacts (`just release`)
+/dist/

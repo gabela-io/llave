@@ -9,6 +9,70 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get waitStart => 'Wait for a login';
+
+  @override
+  String get waitHint =>
+      'Start a Cl@ve login on a website, then wait here for the request.';
+
+  @override
+  String get waitSearching => 'Waiting for a login request…';
+
+  @override
+  String waitRemaining(int seconds) {
+    return '$seconds s left';
+  }
+
+  @override
+  String get waitTimeout =>
+      'No request arrived. Start the login on the website and try again.';
+
+  @override
+  String get requestFrom => 'Login request from';
+
+  @override
+  String get verificationCodeLabel => 'Verification code';
+
+  @override
+  String get verificationCodeHint =>
+      'It must match the code shown on the website.';
+
+  @override
+  String get requestQuestion =>
+      'Did you start this login yourself, on the official website, and not from a link in an email or SMS?';
+
+  @override
+  String get yesConfirm => 'Yes, confirm';
+
+  @override
+  String get noReject => 'No, reject';
+
+  @override
+  String get pinCardTitle => 'Cl@ve PIN';
+
+  @override
+  String get pinCardHint =>
+      'Request a PIN on the AEAT website, then reveal it here.';
+
+  @override
+  String get pinReveal => 'Show PIN';
+
+  @override
+  String get pinHide => 'Hide';
+
+  @override
+  String get pinNoPending =>
+      'There is no pending PIN. Request one on the AEAT website first.';
+
+  @override
+  String get pinBiometricReason => 'Confirm to show your Cl@ve PIN';
+
+  @override
+  String pinValidFor(int seconds) {
+    return 'Valid for $seconds s';
+  }
+
+  @override
   String get cancel => 'Cancel';
 
   @override
@@ -19,9 +83,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get confirm => 'Confirm';
-
-  @override
-  String get reject => 'Reject';
 
   @override
   String get save => 'Save';
@@ -40,6 +101,48 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get unknownError => 'Unknown error';
+
+  @override
+  String get errorNoConnection =>
+      'Could not reach the AEAT servers. Check your connection and try again.';
+
+  @override
+  String get errorNoSession =>
+      'This device has no Cl@ve session. Activate it again.';
+
+  @override
+  String get errorDeviceNotActive =>
+      'This device is no longer active in Cl@ve. Activate it again.';
+
+  @override
+  String get errorNotRegistered =>
+      'This NIF is not registered in Cl@ve. Register on the AEAT website or at an office first.';
+
+  @override
+  String get errorNoRegisteredPhone =>
+      'Your Cl@ve registration has no mobile phone. Add one on the AEAT website first.';
+
+  @override
+  String get errorAppOutdated =>
+      'The AEAT servers no longer accept this version of llave. Update the app.';
+
+  @override
+  String get errorInvalidQr =>
+      'This is not a Cl@ve QR code. Scan the code shown on the AEAT website.';
+
+  @override
+  String get errorDniData =>
+      'The AEAT servers did not accept the document data. Check the NIF and the date or support number.';
+
+  @override
+  String get errorInvalidNif => 'The NIF is not valid.';
+
+  @override
+  String get errorUnexpectedResponse =>
+      'Unexpected response from the AEAT servers. Try again later.';
+
+  @override
+  String get errorUnexpected => 'Something went wrong. Try again.';
 
   @override
   String get invalidResponse => 'Invalid response from server';
@@ -87,15 +190,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'This will clear your session. You can re-activate later.';
 
   @override
-  String get noActiveSession => 'No active session';
-
-  @override
-  String get activateToStart => 'Activate your device to get started.';
-
-  @override
-  String get activateDevice => 'Activate Device';
-
-  @override
   String get qrAuthentication => 'QR Authentication';
 
   @override
@@ -125,35 +219,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pendingTitle => 'Pending Requests';
 
   @override
-  String get pendingEmptyTitle => 'No pending requests';
-
-  @override
-  String get pendingEmptySubtitle =>
-      'Authentication requests will appear here\nwhen detected by the server.';
-
-  @override
   String get requestConfirmed => 'Request confirmed';
 
   @override
   String get requestRejected => 'Request rejected';
-
-  @override
-  String get failed => 'Failed';
-
-  @override
-  String providerCode(String code) {
-    return 'Provider code: $code';
-  }
-
-  @override
-  String actionRequestTitle(String action) {
-    return '$action request?';
-  }
-
-  @override
-  String actionRequestMessage(String action) {
-    return 'Are you sure you want to $action this authentication request?';
-  }
 
   @override
   String get historyTitle => 'History';
@@ -166,21 +235,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get rejected => 'Rejected';
-
-  @override
-  String get myDataTitle => 'My Data';
-
-  @override
-  String get noData => 'No data';
-
-  @override
-  String get accountInformation => 'Account Information';
-
-  @override
-  String get nifLabel => 'NIF';
-
-  @override
-  String get registrationLevel => 'Registration Level';
 
   @override
   String get qrAuthTitle => 'QR Authentication';
@@ -217,26 +271,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get invalidPetitionData => 'Invalid response: no petition data';
 
   @override
-  String get confirmAuthTitle => 'Confirm Authentication';
-
-  @override
-  String get authRequestReceived =>
-      'An authentication request has been received:';
-
-  @override
-  String get organizationLabel => 'Organization';
-
-  @override
-  String get typeLabel => 'Type';
-
-  @override
   String get dniAuthTitle => 'DNI/NIE Authentication';
-
-  @override
-  String get deviceActivated => 'Device activated successfully!';
-
-  @override
-  String get goToHome => 'Go to Home';
 
   @override
   String get smsVerification => 'SMS Verification';
@@ -276,19 +311,39 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nifMinLength => 'NIF must be at least 8 characters';
 
   @override
-  String get fechaValidezLabel => 'Fecha de validez del DNI';
+  String get fechaValidezLabel => 'ID card validity date';
 
   @override
-  String get ddMmYyyy => 'DD/MM/YYYY';
+  String get ddMmYyyy => 'DD-MM-YYYY';
 
   @override
-  String get fechaHelperText => 'Expiry date printed on your DNI/NIE card';
+  String get fechaHelperText => 'Expiry date printed on your DNI';
 
   @override
   String get dateRequired => 'Date is required';
 
   @override
-  String get useDdMmYyyy => 'Use DD/MM/YYYY format';
+  String get useDdMmYyyy => 'Use DD-MM-YYYY format';
+
+  @override
+  String get birthDateLabel => 'Date of birth';
+
+  @override
+  String get birthDateHelperText => 'As shown on your document';
+
+  @override
+  String get supportNumberLabel => 'Support number';
+
+  @override
+  String get supportNumberHelperText =>
+      'Printed on your NIE card, e.g. E12345678';
+
+  @override
+  String get supportNumberRequired => 'Support number is required';
+
+  @override
+  String get birthDateChallenge =>
+      'For extra security, also enter your date of birth.';
 
   @override
   String get settingsTitle => 'Settings';
@@ -355,7 +410,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get poweredBy => 'Powered by';
 
   @override
-  String get poweredByValue => 'Rust core (llave-core) via flutter_rust_bridge';
+  String get poweredByValue => 'Rust core (llave-core) via FFI';
 
   @override
   String get developer => 'Developer';
@@ -473,19 +528,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get forgotPin => 'Forgot PIN?';
-
-  @override
-  String get activateLlave => 'Activate Llave';
-
-  @override
-  String get registerDevice => 'Register this device with your Cl@ve account.';
-
-  @override
-  String get activateWithDni => 'Activate with DNI/NIE';
-
-  @override
-  String get dniActivateDescription =>
-      'You will need the data printed on your physical DNI/NIE card and access to the phone number registered with Cl@ve.';
 
   @override
   String get setYourPin => 'Set Your PIN';

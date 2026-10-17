@@ -7,7 +7,7 @@ import '../src/api_helpers.dart';
 import '../src/auth_provider.dart';
 import '../src/llave_bridge.dart';
 import '../src/routes.dart';
-import '../src/rust/api/api.dart' as native_ffi;
+import '../widgets/pin_card.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -30,8 +30,9 @@ class HomeScreen extends ConsumerWidget {
             ),
         ],
       ),
+      // The router only shows Home with an active session.
       body: session == null
-          ? _UnauthenticatedBody()
+          ? const SizedBox.shrink()
           : _AuthenticatedBody(session: session),
     );
   }
@@ -59,53 +60,15 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _UnauthenticatedBody extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.shield_outlined, size: 64,
-                color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(height: 16),
-            Text(
-              l10n.noActiveSession,
-              style: theme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              l10n.activateToStart,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: () => context.go(AppRoutes.activate),
-              icon: const Icon(Icons.login),
-              label: Text(l10n.activateDevice),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AuthenticatedBody extends StatefulWidget {
+class _AuthenticatedBody extends ConsumerStatefulWidget {
   final dynamic session;
   const _AuthenticatedBody({required this.session});
 
   @override
-  State<_AuthenticatedBody> createState() => _AuthenticatedBodyState();
+  ConsumerState<_AuthenticatedBody> createState() => _AuthenticatedBodyState();
 }
 
-class _AuthenticatedBodyState extends State<_AuthenticatedBody> {
+class _AuthenticatedBodyState extends ConsumerState<_AuthenticatedBody> {
   bool _loading = false;
   Map<String, dynamic>? _accountData;
   String? _error;
@@ -123,10 +86,7 @@ class _AuthenticatedBodyState extends State<_AuthenticatedBody> {
     });
 
     await handleApiCall(
-      apiCall: () async {
-        final r = await native_ffi.getMyData();
-        return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
-      },
+      apiCall: () => ref.read(llaveBridgeProvider).getMyData(),
       setLoading: (v) {
         if (mounted) setState(() => _loading = v);
       },
@@ -156,6 +116,8 @@ class _AuthenticatedBodyState extends State<_AuthenticatedBody> {
           error: _error,
           onRetry: _loadAccountData,
         ),
+        const SizedBox(height: 16),
+        const PinCard(),
         const SizedBox(height: 20),
         SizedBox(
           height: 56,

@@ -1,7 +1,7 @@
 // Native C FFI bindings to libllave_core_ffi.so.
 //
-// Replaces the flutter_rust_bridge stubs with direct dart:ffi calls
-// to the `extern "C"` functions exported by the Rust FFI crate.
+// Direct dart:ffi calls to the `extern "C"` functions exported by the Rust
+// FFI crate.
 
 import 'dart:convert';
 import 'dart:ffi' as ffi;
@@ -13,42 +13,16 @@ import 'package:ffi/ffi.dart';
 // FFI types
 // ---------------------------------------------------------------------------
 
-class FfiSession {
-  final String deviceId;
-  final String nif;
-  final String createdAt;
-  final bool hasFirebaseToken;
-  const FfiSession({
-    required this.deviceId,
-    required this.nif,
-    required this.createdAt,
-    required this.hasFirebaseToken,
-  });
-}
-
-class FfiPinResult {
-  final String pin;
-  final String timeToLiveSeconds;
-  final String nif;
-  const FfiPinResult({
-    required this.pin,
-    required this.timeToLiveSeconds,
-    required this.nif,
-  });
-}
-
 class FfiStatus {
   final bool active;
   final String? nif;
   final String? deviceId;
   final String? createdAt;
-  final bool hasFirebaseToken;
   const FfiStatus({
     required this.active,
     this.nif,
     this.deviceId,
     this.createdAt,
-    required this.hasFirebaseToken,
   });
 }
 
@@ -56,7 +30,15 @@ class FfiApiResult {
   final bool ok;
   final String data;
   final String? error;
-  const FfiApiResult({required this.ok, required this.data, this.error});
+  final String? errorCode;
+  final String? serverMessage;
+  const FfiApiResult({
+    required this.ok,
+    required this.data,
+    this.error,
+    this.errorCode,
+    this.serverMessage,
+  });
 }
 
 class FfiNifCheckResult {
@@ -97,6 +79,11 @@ typedef _Fn3C = ffi.Pointer<Utf8> Function(
 typedef _Fn3Dart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 
+typedef _Fn4C = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _Fn4Dart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
 typedef _Fn5C = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>,
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
@@ -104,8 +91,6 @@ typedef _Fn5Dart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>,
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 
-typedef _FnListenC = ffi.Pointer<Utf8> Function(ffi.Uint64, ffi.Uint32);
-typedef _FnListenDart = ffi.Pointer<Utf8> Function(int, int);
 
 // ---------------------------------------------------------------------------
 // Low-level helpers (usable from any isolate)
@@ -163,14 +148,6 @@ Map<String, dynamic> _call2(String libPath, String symbol, String? a1, String? a
   return result;
 }
 
-/// Call listen_for_requests (u64, u32 args).
-Map<String, dynamic> _callListen(
-    String libPath, String symbol, int intervalSecs, int maxAttempts) {
-  final lib = ffi.DynamicLibrary.open(libPath);
-  final fn = lib.lookupFunction<_FnListenC, _FnListenDart>(symbol);
-  return _parseResult(lib, fn(intervalSecs, maxAttempts));
-}
-
 /// Call a 3-arg native function.
 Map<String, dynamic> _call3(
     String libPath, String symbol, String? a1, String? a2, String? a3) {
@@ -183,6 +160,23 @@ Map<String, dynamic> _call3(
   _freeNative(p1);
   _freeNative(p2);
   _freeNative(p3);
+  return result;
+}
+
+/// Call a 4-arg native function.
+Map<String, dynamic> _call4(String libPath, String symbol, String? a1,
+    String? a2, String? a3, String? a4) {
+  final lib = ffi.DynamicLibrary.open(libPath);
+  final fn = lib.lookupFunction<_Fn4C, _Fn4Dart>(symbol);
+  final p1 = _toNative(a1);
+  final p2 = _toNative(a2);
+  final p3 = _toNative(a3);
+  final p4 = _toNative(a4);
+  final result = _parseResult(lib, fn(p1, p2, p3, p4));
+  _freeNative(p1);
+  _freeNative(p2);
+  _freeNative(p3);
+  _freeNative(p4);
   return result;
 }
 
@@ -228,7 +222,6 @@ FfiStatus getStatus() {
     nif: d['nif'] as String?,
     deviceId: d['deviceId'] as String?,
     createdAt: d['createdAt'] as String?,
-    hasFirebaseToken: d['hasFirebaseToken'] as bool,
   );
 }
 
@@ -237,8 +230,21 @@ bool logout() {
   return true;
 }
 
+/// llave's version and the Cl@ve app version it matches.
+String version() {
+  final r = _checkOk(_call0(nativeLibPath, 'llave_version'));
+  return r['data'] as String;
+}
+
 String validateNif({required String nif}) {
   final r = _checkOk(_call1(nativeLibPath, 'llave_validate_nif', nif));
+  return r['data'] as String;
+}
+
+/// Document field the DNI/NIE authentication needs for [nif]:
+/// `validity_date`, `birth_date` or `support_number`.
+String dniInput({required String nif}) {
+  final r = _checkOk(_call1(nativeLibPath, 'llave_dni_input', nif));
   return r['data'] as String;
 }
 
@@ -266,27 +272,10 @@ String changeSessionPin(
 // Async API (run in isolate to avoid blocking UI)
 // ---------------------------------------------------------------------------
 
-Future<FfiSession> activateDevice({required String nif, String? password}) async {
+/// Reveal the pending PIN: `data` is `{pin, time_to_live_seconds, nif}`.
+Future<FfiApiResult> requestPin() async {
   final lp = nativeLibPath;
-  final r = await Isolate.run(() => _checkOk(_call2(lp, 'llave_activate_device', nif, password)));
-  final d = r['data'] as Map<String, dynamic>;
-  return FfiSession(
-    deviceId: d['deviceId'] as String,
-    nif: d['nif'] as String,
-    createdAt: d['createdAt'] as String,
-    hasFirebaseToken: d['hasFirebaseToken'] as bool,
-  );
-}
-
-Future<FfiPinResult> requestPin() async {
-  final lp = nativeLibPath;
-  final r = await Isolate.run(() => _checkOk(_call0(lp, 'llave_request_pin')));
-  final d = r['data'] as Map<String, dynamic>;
-  return FfiPinResult(
-    pin: d['pin'] as String,
-    timeToLiveSeconds: d['timeToLiveSeconds'] as String,
-    nif: d['nif'] as String,
-  );
+  return Isolate.run(() => _toApiResult(_checkOk(_call0(lp, 'llave_request_pin'))));
 }
 
 Future<FfiNifCheckResult> checkNif({String? nif}) async {
@@ -306,6 +295,8 @@ FfiApiResult _toApiResult(Map<String, dynamic> r) {
     ok: d['ok'] as bool,
     data: d['data'] as String? ?? '',
     error: d['error'] as String?,
+    errorCode: d['error_code'] as String?,
+    serverMessage: d['server_message'] as String?,
   );
 }
 
@@ -347,11 +338,15 @@ Future<FfiApiResult> deactivate() async {
   return Isolate.run(() => _toApiResult(_checkOk(_call0(lp, 'llave_deactivate'))));
 }
 
-Future<FfiApiResult> dniAuthenticate(
-    {required String nif, required String fecha, required String soporte}) async {
+Future<FfiApiResult> dniAuthenticate({
+  required String nif,
+  required String fecha,
+  required String soporte,
+  String challenge = '',
+}) async {
   final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call3(lp, 'llave_dni_authenticate', nif, fecha, soporte))));
+  return Isolate.run(() => _toApiResult(_checkOk(
+      _call4(lp, 'llave_dni_authenticate', nif, fecha, soporte, challenge))));
 }
 
 Future<FfiApiResult> dniCompleteActivation({
@@ -365,50 +360,6 @@ Future<FfiApiResult> dniCompleteActivation({
   return Isolate.run(
       () => _toApiResult(_checkOk(_call5(lp, 'llave_dni_complete_activation',
           nif, cookiesJson, timestampAltaSms, tokenClaveMovilSms, smsPin))));
-}
-
-Future<FfiApiResult> setFirebaseToken({required String tokenPush}) async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call1(lp, 'llave_set_firebase_token', tokenPush))));
-}
-
-Future<FfiApiResult> requestSmsCode() async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call0(lp, 'llave_request_sms_code'))));
-}
-
-Future<FfiApiResult> validateSmsCode(
-    {required String timestamp, required String token, required String pin}) async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call3(lp, 'llave_validate_sms_code', timestamp, token, pin))));
-}
-
-Future<FfiApiResult> getLlaveMovil() async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call0(lp, 'llave_get_llave_movil'))));
-}
-
-Future<FfiApiResult> validateLlaveMovil({required String token}) async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call1(lp, 'llave_validate_llave_movil', token))));
-}
-
-Future<FfiApiResult> getPendingPetitions() async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_call0(lp, 'llave_get_pending_petitions'))));
-}
-
-Future<FfiApiResult> listenForRequests(
-    {required int intervalSecs, required int maxAttempts}) async {
-  final lp = nativeLibPath;
-  return Isolate.run(
-      () => _toApiResult(_checkOk(_callListen(lp, 'llave_listen_for_requests', intervalSecs, maxAttempts))));
 }
 
 /// Set or clear the proxy URL for all subsequent API calls.

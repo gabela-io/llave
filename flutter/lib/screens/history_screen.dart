@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 
 import '../src/api_helpers.dart';
 import '../src/llave_bridge.dart';
-import '../src/rust/api/api.dart' as native_ffi;
 import '../widgets/data_screen_scaffold.dart';
 
-class HistoryScreen extends StatefulWidget {
+class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
 
   @override
-  State<HistoryScreen> createState() => _HistoryScreenState();
+  ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-class _HistoryScreenState extends State<HistoryScreen> {
+class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   bool _loading = false;
   List<Map<String, dynamic>> _operations = [];
   String? _error;
@@ -31,10 +31,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
 
     await handleApiCall(
-      apiCall: () async {
-        final r = await native_ffi.getHistory();
-        return LlaveApiResult(ok: r.ok, data: r.data, error: r.error);
-      },
+      apiCall: () => ref.read(llaveBridgeProvider).getHistory(),
       setLoading: (v) {
         if (mounted) setState(() => _loading = v);
       },

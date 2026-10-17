@@ -6,6 +6,8 @@
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `challenge_from_name`, `challenge_name`, `failure`, `session_and_client`, `success`, `to_ffi_result`
+
 /// Initialise the Rust core storage backend.
 ///
 /// The FFI layer always uses [`MemoryStorage`]; Flutter is responsible for
@@ -15,19 +17,23 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Future<bool> initCore({String? sessionJson}) =>
     RustLib.instance.api.crateApiInitCore(sessionJson: sessionJson);
 
+/// Set the proxy URL for all subsequent API calls.
+///
+/// Supports HTTP, HTTPS, and SOCKS5 URLs (e.g. `socks5://127.0.0.1:1080`).
+/// Pass `None` to disable the proxy.
+Future<void> setProxy({String? url}) =>
+    RustLib.instance.api.crateApiSetProxy(url: url);
+
 /// Export the current session as a JSON string.
 ///
 /// Flutter should call this after operations that create or mutate the session
-/// (e.g. `activate_device`) and persist the returned JSON in
+/// (e.g. `dni_complete_activation`) and persist the returned JSON in
 /// `flutter_secure_storage`.  Returns `null` if there is no active session.
 Future<String?> exportSession() => RustLib.instance.api.crateApiExportSession();
 
-/// Activate this device with Llave.
-Future<FfiSession> activateDevice({required String nif, String? password}) =>
-    RustLib.instance.api.crateApiActivateDevice(nif: nif, password: password);
-
-/// Request a Llave PIN.
-Future<FfiPinResult> requestPin() => RustLib.instance.api.crateApiRequestPin();
+/// Reveal the pending Cl@ve PIN: `data` is `{pin, time_to_live_seconds, nif}`;
+/// `time_to_live_seconds` is empty when the server sent no validity.
+Future<FfiApiResult> requestPin() => RustLib.instance.api.crateApiRequestPin();
 
 /// Get current session status.
 Future<FfiStatus> getStatus() => RustLib.instance.api.crateApiGetStatus();
@@ -37,12 +43,18 @@ Future<FfiNifCheckResult> checkNif({String? nif}) =>
     RustLib.instance.api.crateApiCheckNif(nif: nif);
 
 /// Get account data.
+///
+/// Mirrors the Android app flow: ClaveIsNifActivatedSv → ClaveCheckMyDataSv.
+/// The response contains `email`, `numTelefono`, and `nivelRegistro`.
 Future<FfiApiResult> getMyData() => RustLib.instance.api.crateApiGetMyData();
 
 /// Get operations history.
 Future<FfiApiResult> getHistory() => RustLib.instance.api.crateApiGetHistory();
 
 /// Poll for pending authentication requests (single poll).
+///
+/// `data` is the pending `peticion` object, or `null` when there is nothing
+/// yet (codes meaning "keep polling" are folded in by the core).
 Future<FfiApiResult> getPendingRequests() =>
     RustLib.instance.api.crateApiGetPendingRequests();
 
@@ -66,75 +78,110 @@ Future<FfiApiResult> deactivate() => RustLib.instance.api.crateApiDeactivate();
 /// Log out and clear saved credentials.
 Future<bool> logout() => RustLib.instance.api.crateApiLogout();
 
+/// llave's version and the Cl@ve app version it matches.
+Future<String> version() => RustLib.instance.api.crateApiVersion();
+
 /// Validate a NIF format without making any API calls.
 Future<String> validateNif({required String nif}) =>
     RustLib.instance.api.crateApiValidateNif(nif: nif);
 
-/// Authenticate using DNI/NIE weak authentication (no certificate needed)
-/// and then activate the device so that a full session is available.
+/// Which document field the DNI/NIE authentication needs for `nif`:
+/// `"validity_date"`, `"birth_date"` or `"support_number"`.
+Future<String> dniInput({required String nif}) =>
+    RustLib.instance.api.crateApiDniInput(nif: nif);
+
+/// Encrypt the current in-memory session with a PIN.
 ///
-/// Follows the Android app's flow:
-/// 1. `AutenticaDniNieContrasteh` with `modo=json` (proves identity on www2)
-/// 2. `ClaveRequestStateSv` (registration check on www12)
-/// 3. `ClaveActivateAuthenticationSv` (device activation on www6)
+/// Returns a base64-encoded sealed blob. Flutter should store this in
+/// `flutter_secure_storage` instead of raw JSON.
+Future<String> encryptSession({required String pin}) =>
+    RustLib.instance.api.crateApiEncryptSession(pin: pin);
+
+/// Decrypt a sealed session blob and load it into the Rust core.
 ///
-/// Requires the NIF, the expiry date of the physical DNI card (DD/MM/YYYY),
-/// and the support number printed on the card.
+/// On success the session is available for all subsequent API calls.
+/// Returns an error if the PIN is wrong (AES-GCM auth fails).
+Future<bool> decryptAndLoadSession(
+        {required String sealed, required String pin}) =>
+    RustLib.instance.api
+        .crateApiDecryptAndLoadSession(sealed: sealed, pin: pin);
+
+/// Re-encrypt the current session with a new PIN.
+///
+/// Requires the old PIN to decrypt first (validates the caller knows it),
+/// then re-encrypts with the new PIN and returns the new sealed blob.
+Future<String> changeSessionPin(
+        {required String sealed,
+        required String oldPin,
+        required String newPin}) =>
+    RustLib.instance.api.crateApiChangeSessionPin(
+        sealed: sealed, oldPin: oldPin, newPin: newPin);
+
+/// Phase 1: DNI/NIE auth → registration check → request SMS code.
+///
+/// Returns the registration state, masked phone number, SMS tokens,
+/// and serialised cookies for phase 2.
+///
+/// After this call, the user must enter the SMS PIN they receive,
+/// then call [`dni_complete_activation`] with the PIN and cookies.
+///
+/// `challenge` is empty on the first call. When the server asks for the
+/// date of birth the result is `ok: false` with `data = {"challenge": …}`;
+/// call again with the date of birth as `fecha` and that challenge.
 Future<FfiApiResult> dniAuthenticate(
         {required String nif,
         required String fecha,
-        required String soporte}) =>
-    RustLib.instance.api
-        .crateApiDniAuthenticate(nif: nif, fecha: fecha, soporte: soporte);
+        required String soporte,
+        required String challenge}) =>
+    RustLib.instance.api.crateApiDniAuthenticate(
+        nif: nif, fecha: fecha, soporte: soporte, challenge: challenge);
 
-/// Register a Firebase push notification token.
-Future<FfiApiResult> setFirebaseToken({required String tokenPush}) =>
-    RustLib.instance.api.crateApiSetFirebaseToken(tokenPush: tokenPush);
-
-/// Request an SMS verification code.
-Future<FfiApiResult> requestSmsCode() =>
-    RustLib.instance.api.crateApiRequestSmsCode();
-
-/// Validate an SMS verification code.
-Future<FfiApiResult> validateSmsCode(
-        {required String timestamp,
-        required String token,
-        required String pin}) =>
-    RustLib.instance.api
-        .crateApiValidateSmsCode(timestamp: timestamp, token: token, pin: pin);
-
-/// Get Llave Móvil token.
-Future<FfiApiResult> getLlaveMovil() =>
-    RustLib.instance.api.crateApiGetLlaveMovil();
-
-/// Validate a Llave Móvil token.
-Future<FfiApiResult> validateLlaveMovil({required String token}) =>
-    RustLib.instance.api.crateApiValidateLlaveMovil(token: token);
-
-/// Get pending market petitions.
-Future<FfiApiResult> getPendingPetitions() =>
-    RustLib.instance.api.crateApiGetPendingPetitions();
-
-/// Listen for pending authentication requests (polling loop).
-Future<FfiApiResult> listenForRequests(
-        {required BigInt intervalSecs, required int maxAttempts}) =>
-    RustLib.instance.api.crateApiListenForRequests(
-        intervalSecs: intervalSecs, maxAttempts: maxAttempts);
+/// Phase 2: Validate SMS code + activate device.
+///
+/// Takes the SMS tokens and cookies from [`dni_authenticate`] (phase 1),
+/// validates the user-entered SMS PIN, then activates the device on www6.
+Future<FfiApiResult> dniCompleteActivation(
+        {required String nif,
+        required String cookiesJson,
+        required String timestampAltaSms,
+        required String tokenClaveMovilSms,
+        required String smsPin}) =>
+    RustLib.instance.api.crateApiDniCompleteActivation(
+        nif: nif,
+        cookiesJson: cookiesJson,
+        timestampAltaSms: timestampAltaSms,
+        tokenClaveMovilSms: tokenClaveMovilSms,
+        smsPin: smsPin);
 
 /// Generic API result carrying JSON data.
 class FfiApiResult {
   final bool ok;
   final String data;
+
+  /// English error text, for logs.
   final String? error;
+
+  /// [`LlaveError::kind`](llave_core::LlaveError::kind), for a localised message.
+  final String? errorCode;
+
+  /// The AEAT server's own message for a `KO`, shown as is.
+  final String? serverMessage;
 
   const FfiApiResult({
     required this.ok,
     required this.data,
     this.error,
+    this.errorCode,
+    this.serverMessage,
   });
 
   @override
-  int get hashCode => ok.hashCode ^ data.hashCode ^ error.hashCode;
+  int get hashCode =>
+      ok.hashCode ^
+      data.hashCode ^
+      error.hashCode ^
+      errorCode.hashCode ^
+      serverMessage.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -143,7 +190,9 @@ class FfiApiResult {
           runtimeType == other.runtimeType &&
           ok == other.ok &&
           data == other.data &&
-          error == other.error;
+          error == other.error &&
+          errorCode == other.errorCode &&
+          serverMessage == other.serverMessage;
 }
 
 /// NIF check result.
@@ -171,86 +220,23 @@ class FfiNifCheckResult {
           responseJson == other.responseJson;
 }
 
-/// Result of a PIN request.
-class FfiPinResult {
-  final String pin;
-  final String timeToLiveSeconds;
-  final String nif;
-
-  const FfiPinResult({
-    required this.pin,
-    required this.timeToLiveSeconds,
-    required this.nif,
-  });
-
-  @override
-  int get hashCode => pin.hashCode ^ timeToLiveSeconds.hashCode ^ nif.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is FfiPinResult &&
-          runtimeType == other.runtimeType &&
-          pin == other.pin &&
-          timeToLiveSeconds == other.timeToLiveSeconds &&
-          nif == other.nif;
-}
-
-/// Session information returned after activation.
-class FfiSession {
-  final String deviceId;
-  final String nif;
-  final String createdAt;
-  final bool hasFirebaseToken;
-
-  const FfiSession({
-    required this.deviceId,
-    required this.nif,
-    required this.createdAt,
-    required this.hasFirebaseToken,
-  });
-
-  @override
-  int get hashCode =>
-      deviceId.hashCode ^
-      nif.hashCode ^
-      createdAt.hashCode ^
-      hasFirebaseToken.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is FfiSession &&
-          runtimeType == other.runtimeType &&
-          deviceId == other.deviceId &&
-          nif == other.nif &&
-          createdAt == other.createdAt &&
-          hasFirebaseToken == other.hasFirebaseToken;
-}
-
 /// Status of the current session.
 class FfiStatus {
   final bool active;
   final String? nif;
   final String? deviceId;
   final String? createdAt;
-  final bool hasFirebaseToken;
 
   const FfiStatus({
     required this.active,
     this.nif,
     this.deviceId,
     this.createdAt,
-    required this.hasFirebaseToken,
   });
 
   @override
   int get hashCode =>
-      active.hashCode ^
-      nif.hashCode ^
-      deviceId.hashCode ^
-      createdAt.hashCode ^
-      hasFirebaseToken.hashCode;
+      active.hashCode ^ nif.hashCode ^ deviceId.hashCode ^ createdAt.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -260,6 +246,5 @@ class FfiStatus {
           active == other.active &&
           nif == other.nif &&
           deviceId == other.deviceId &&
-          createdAt == other.createdAt &&
-          hasFirebaseToken == other.hasFirebaseToken;
+          createdAt == other.createdAt;
 }
