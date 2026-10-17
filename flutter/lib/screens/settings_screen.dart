@@ -124,7 +124,7 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: Text(l10n.version),
-            subtitle: const Text('0.1.0'),
+            subtitle: Text(ref.read(llaveBridgeProvider).version()),
           ),
           ListTile(
             leading: const Icon(Icons.code),

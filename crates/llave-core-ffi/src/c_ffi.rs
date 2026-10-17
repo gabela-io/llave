@@ -135,6 +135,12 @@ pub extern "C" fn llave_export_session() -> *mut c_char {
     })
 }
 
+/// llave's version and the Cl@ve app version it matches.
+#[no_mangle]
+pub extern "C" fn llave_version() -> *mut c_char {
+    ffi_guard(|| ok_json(serde_json::Value::String(crate::api::version())))
+}
+
 #[no_mangle]
 pub extern "C" fn llave_get_status() -> *mut c_char {
     ffi_guard(|| {
@@ -431,6 +437,12 @@ mod tests {
         // SAFETY: `nif` is a valid C string alive for the call.
         let v = take(unsafe { llave_validate_nif(nif.as_ptr()) });
         assert_eq!(v["data"], "12345678Z");
+    }
+
+    #[test]
+    fn version_names_the_clave_app() {
+        let v = take(llave_version());
+        assert!(v["data"].as_str().unwrap().contains("Cl@ve 6.2.10"));
     }
 
     #[test]

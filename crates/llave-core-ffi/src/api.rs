@@ -296,6 +296,12 @@ pub fn logout() -> Result<bool, String> {
     Ok(true)
 }
 
+/// llave's version and the Cl@ve app version it matches.
+#[frb]
+pub fn version() -> String {
+    llave_core::version()
+}
+
 /// Validate a NIF format without making any API calls.
 #[frb]
 pub fn validate_nif(nif: String) -> Result<String, String> {

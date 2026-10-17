@@ -18,6 +18,8 @@ let
     fenixPkgs.targets.armv7-linux-androideabi.stable.rust-std
     fenixPkgs.targets.x86_64-linux-android.stable.rust-std
     fenixPkgs.targets.i686-linux-android.stable.rust-std
+    # Static CLI binary for releases (runs on any Linux, not only Nix).
+    fenixPkgs.targets.x86_64-unknown-linux-musl.stable.rust-std
   ];
 
   androidComposition = pkgs.androidenv.composeAndroidPackages {
@@ -53,6 +55,7 @@ pkgs.mkShell (
       toolchain
       fenixPkgs.rust-analyzer
       pkgs.just
+      pkgs.jq # `just release` reads the version from cargo metadata
 
       pkgs.openssl
       pkgs.pkg-config
@@ -126,11 +129,13 @@ pkgs.mkShell (
             fi
             if [ -d "flutter/android" ]; then
               FLUTTER_SDK_PATH="$(dirname "$(dirname "$(command -v flutter)")")"
-              cat > flutter/android/local.properties <<PROPS
-      sdk.dir=$ANDROID_SDK_ROOT
-      ndk.dir=$ANDROID_NDK_HOME
-      flutter.sdk=$FLUTTER_SDK_PATH
-      PROPS
+              # Update only these keys: flutter writes the app version
+              # (flutter.versionName/versionCode) into the same file.
+              props=flutter/android/local.properties
+              touch "$props"
+              sed -i -e '/^sdk\.dir=/d' -e '/^ndk\.dir=/d' -e '/^flutter\.sdk=/d' "$props"
+              printf 'sdk.dir=%s\nndk.dir=%s\nflutter.sdk=%s\n' \
+                "$ANDROID_SDK_ROOT" "$ANDROID_NDK_HOME" "$FLUTTER_SDK_PATH" >> "$props"
             fi
           fi
     '';

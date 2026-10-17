@@ -33,6 +33,16 @@ It speaks the same protocol as the official app (v6.2.10): the same endpoints, a
 > llave is an **unofficial** project and is not affiliated with or endorsed by the Agencia Tributaria or any other public body.
 > It acts with **your real identity**. Credentials are stored only on your machine (encrypted with your PIN), nothing is sent anywhere except to the official AEAT servers, and there is no telemetry.
 
+### Compatibility
+
+llave has its own version number. Each release matches one version of the official app; `llave --version` and the app's settings show both.
+
+| llave | Official Cl@ve app |
+|-------|--------------------|
+| 0.1.0 | 6.2.10 (build 294) |
+
+See the [changelog](CHANGELOG.md) for what each release changes.
+
 ## Features
 
 - **Device activation** with your DNI/NIE and an SMS code, like the official app
@@ -62,6 +72,15 @@ llave pin
 
 ```bash
 nix run github:gabela-io/llave#llave-cli
+```
+
+### Prebuilt binaries
+
+Each [release](https://github.com/gabela-io/llave/releases) has a static Linux CLI (`llave-<version>-linux-x86_64`), the Android app (`llave-<version>.apk`) and `SHA256SUMS`. Check the download before running it:
+
+```bash
+sha256sum --check --ignore-missing SHA256SUMS
+chmod +x llave-0.1.0-linux-x86_64
 ```
 
 ### From source

@@ -68,7 +68,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 249995508;
+  int get rustContentHash => -1541914562;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -133,6 +133,8 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiSetProxy({String? url});
 
   Future<String> crateApiValidateNif({required String nif});
+
+  Future<String> crateApiVersion();
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -678,6 +680,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiValidateNifConstMeta => const TaskConstMeta(
         debugName: "validate_nif",
         argNames: ["nif"],
+      );
+
+  @override
+  Future<String> crateApiVersion() {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        pdeCallFfi(generalizedFrbRustBinding, serializer,
+            funcId: 22, port: port_);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_String,
+        decodeErrorData: null,
+      ),
+      constMeta: kCrateApiVersionConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateApiVersionConstMeta => const TaskConstMeta(
+        debugName: "version",
+        argNames: [],
       );
 
   @protected

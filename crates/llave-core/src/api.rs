@@ -143,8 +143,11 @@ const BASE_URL: &str = "https://www2.agenciatributaria.gob.es";
 const BASE_URL_WWW6: &str = "https://www6.agenciatributaria.gob.es";
 const BASE_URL_WWW12: &str = "https://www12.agenciatributaria.gob.es";
 
-/// App version sent as `version_app` (app 6.2.10, build 294).
-const APP_VERSION: &str = "6.2.10";
+/// Version of the official Cl app (`es.aeat.pin24h`) llave matches,
+/// sent as `version_app`.
+pub const CLAVE_APP_VERSION: &str = "6.2.10";
+/// Build number of that app version (in the User-Agent).
+pub const CLAVE_APP_BUILD: &str = "294";
 /// Android-style sistema_operativo value ("A" = Android).
 /// The AEAT server uses this to determine session routing.
 const OS_NAME: &str = "A";
@@ -578,7 +581,7 @@ impl LlaveClient {
                 ("sistema_operativo", OS_NAME),
                 ("token_push", token_push),
                 ("version_os", OS_VERSION),
-                ("version_app", APP_VERSION),
+                ("version_app", CLAVE_APP_VERSION),
                 ("modelo", DEVICE_MODEL),
             ],
         )
@@ -593,7 +596,7 @@ impl LlaveClient {
     pub async fn set_cookie_app_movil(&self) -> Result<ApiResponse<serde_json::Value>> {
         let url = format!("{BASE_URL}/wlpl/MOVI-JDIT/C/SetCookieAppMovil");
         let body = serde_json::json!({
-            "version_app": APP_VERSION,
+            "version_app": CLAVE_APP_VERSION,
             "sistema_operativo": OS_NAME,
             "version_os": OS_VERSION,
             "modelo": DEVICE_MODEL,
@@ -617,7 +620,7 @@ impl LlaveClient {
                 ("NIF", nif),
                 ("sistema_operativo", OS_NAME),
                 ("version_os", OS_VERSION),
-                ("version_app", APP_VERSION),
+                ("version_app", CLAVE_APP_VERSION),
             ],
         )
         .await
@@ -640,7 +643,7 @@ impl LlaveClient {
                 ("NIF", nif),
                 ("sistema_operativo", OS_NAME),
                 ("version_os", OS_VERSION),
-                ("version_app", APP_VERSION),
+                ("version_app", CLAVE_APP_VERSION),
             ],
         )
         .await
@@ -663,7 +666,7 @@ impl LlaveClient {
                 ("NIF", nif),
                 ("sistema_operativo", OS_NAME),
                 ("version_os", OS_VERSION),
-                ("version_app", APP_VERSION),
+                ("version_app", CLAVE_APP_VERSION),
             ],
         )
         .await
@@ -688,7 +691,7 @@ impl LlaveClient {
                 ("NIF", nif),
                 ("sistema_operativo", OS_NAME),
                 ("version_os", OS_VERSION),
-                ("version_app", APP_VERSION),
+                ("version_app", CLAVE_APP_VERSION),
                 ("tokenClaveMovil", token_clave_movil),
                 ("codigoIdP", codigo_idp),
             ],
@@ -713,7 +716,7 @@ impl LlaveClient {
                 ("NIF", nif),
                 ("sistema_operativo", OS_NAME),
                 ("version_os", OS_VERSION),
-                ("version_app", APP_VERSION),
+                ("version_app", CLAVE_APP_VERSION),
                 ("tokenClaveMovil", token_clave_movil),
                 ("codigoIdP", codigo_idp),
             ],
@@ -737,7 +740,7 @@ impl LlaveClient {
             &[
                 ("sistema_operativo", OS_NAME),
                 ("version_os", OS_VERSION),
-                ("version_app", APP_VERSION),
+                ("version_app", CLAVE_APP_VERSION),
                 ("token_push", token_push),
                 ("user_password", device_password),
                 ("modelo", DEVICE_MODEL),
@@ -761,7 +764,7 @@ impl LlaveClient {
                 ("NIF", nif),
                 ("sistema_operativo", OS_NAME),
                 ("version_os", OS_VERSION),
-                ("version_app", APP_VERSION),
+                ("version_app", CLAVE_APP_VERSION),
             ],
         )
         .await
@@ -866,7 +869,7 @@ impl LlaveClient {
             &[
                 ("sistema_operativo", OS_NAME),
                 ("version_os", OS_VERSION),
-                ("version_app", APP_VERSION),
+                ("version_app", CLAVE_APP_VERSION),
             ],
         )
         .await
@@ -889,7 +892,7 @@ impl LlaveClient {
                 ("timestamp", timestamp),
                 ("sistema_operativo", OS_NAME),
                 ("version_os", OS_VERSION),
-                ("version_app", APP_VERSION),
+                ("version_app", CLAVE_APP_VERSION),
             ],
         )
         .await
@@ -927,7 +930,7 @@ impl LlaveClient {
                 ("NIF", nif),
                 ("sistema_operativo", OS_NAME),
                 ("version_os", OS_VERSION),
-                ("version_app", APP_VERSION),
+                ("version_app", CLAVE_APP_VERSION),
                 ("aut_fir", "0"),
                 ("resultado", resultado),
                 ("organismo", ""),
@@ -997,7 +1000,7 @@ impl LlaveClient {
                 ("NIF", nif),
                 ("sistema_operativo", OS_NAME),
                 ("version_os", OS_VERSION),
-                ("version_app", APP_VERSION),
+                ("version_app", CLAVE_APP_VERSION),
                 ("valor_qr", qr_value),
             ],
         )
@@ -1211,7 +1214,9 @@ mod tests {
 
     #[test]
     fn user_agent_version_matches_app_version() {
-        assert!(USER_AGENT.starts_with(&format!("APPMovil/Cl@ve/v{APP_VERSION}(")));
+        assert!(USER_AGENT.starts_with(&format!(
+            "APPMovil/Cl@ve/v{CLAVE_APP_VERSION}({CLAVE_APP_BUILD})/"
+        )));
     }
 
     #[test]

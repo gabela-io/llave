@@ -13,3 +13,14 @@ pub use session::Session;
 #[cfg(not(target_os = "android"))]
 pub use storage::KeyringStorage;
 pub use storage::{init_storage, MemoryStorage, PinPrompt, PinRequest, SealedFileStorage};
+
+/// llave's version and the official Cl@ve app version it matches, e.g.
+/// `0.1.0 (Cl@ve 6.2.10, build 294)`. Shown by the CLI and the app.
+pub fn version() -> String {
+    format!(
+        "{} (Cl@ve {}, build {})",
+        env!("CARGO_PKG_VERSION"),
+        api::CLAVE_APP_VERSION,
+        api::CLAVE_APP_BUILD
+    )
+}

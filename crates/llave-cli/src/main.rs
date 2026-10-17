@@ -9,11 +9,14 @@ use llave_core::{
     init_storage, Config, KeyringStorage, LlaveClient, PinRequest, SealedFileStorage, Session,
 };
 
+/// llave's own version and the official Cl@ve app version it matches.
+static VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(llave_core::version);
+
 #[derive(Parser)]
 #[command(
     name = "llave",
     about = "CLI tool for Llave authentication (Spain's digital identity system)",
-    version
+    version = VERSION.as_str()
 )]
 struct Cli {
     #[command(subcommand)]
@@ -706,6 +709,34 @@ mod tests {
     fn cli_definition_is_valid() {
         use clap::CommandFactory;
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn version_names_the_matched_clave_app() {
+        assert_eq!(
+            VERSION.as_str(),
+            format!("{} (Cl@ve 6.2.10, build 294)", env!("CARGO_PKG_VERSION"))
+        );
+    }
+
+    /// The app ships with the same version as the CLI: `pubspec.yaml` has
+    /// `version: X.Y.Z+N` with N = X*10000 + Y*100 + Z (Android versionCode).
+    #[test]
+    fn flutter_version_matches_cargo() {
+        let pubspec = include_str!("../../../flutter/pubspec.yaml");
+        let line = pubspec
+            .lines()
+            .find_map(|l| l.strip_prefix("version: "))
+            .expect("pubspec.yaml has a version");
+        let (name, code) = line
+            .trim()
+            .split_once('+')
+            .expect("version has a build number");
+        assert_eq!(name, env!("CARGO_PKG_VERSION"));
+
+        let parts: Vec<u32> = name.split('.').map(|p| p.parse().unwrap()).collect();
+        let expected = parts[0] * 10_000 + parts[1] * 100 + parts[2];
+        assert_eq!(code.parse::<u32>().unwrap(), expected, "versionCode");
     }
 
     #[test]

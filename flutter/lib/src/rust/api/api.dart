@@ -230,6 +230,12 @@ bool logout() {
   return true;
 }
 
+/// llave's version and the Cl@ve app version it matches.
+String version() {
+  final r = _checkOk(_call0(nativeLibPath, 'llave_version'));
+  return r['data'] as String;
+}
+
 String validateNif({required String nif}) {
   final r = _checkOk(_call1(nativeLibPath, 'llave_validate_nif', nif));
   return r['data'] as String;

@@ -126,6 +126,9 @@ abstract class LlaveBridge {
   bool logout();
   String validateNif(String nif);
 
+  /// llave's version and the Cl@ve app version it matches.
+  String version();
+
   /// Document field needed for [nif]: `validity_date`, `birth_date` or
   /// `support_number`. Throws when the NIF is invalid.
   String dniInput(String nif);
@@ -297,6 +300,9 @@ class MockLlaveBridge implements LlaveBridge {
   }
 
   @override
+  String version() => 'mock';
+
+  @override
   String dniInput(String nif) {
     // Mirrors llave_core::config::required_dni_input for UI development.
     return switch (validateNif(nif)[0]) {
@@ -441,6 +447,9 @@ class RealLlaveBridge implements LlaveBridge {
 
   @override
   String validateNif(String nif) => ffi.validateNif(nif: nif);
+
+  @override
+  String version() => ffi.version();
 
   @override
   String dniInput(String nif) => ffi.dniInput(nif: nif);

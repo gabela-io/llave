@@ -4,7 +4,9 @@ description: >
   Powered by a Rust core shared across CLI, web, and mobile.
 
 publish_to: "none"
-version: 0.1.0+1
+# Same as the Cargo workspace version; the build number is the Android
+# versionCode, MAJOR*10000 + MINOR*100 + PATCH (checked by the CLI tests).
+version: 0.1.0+100
 
 environment:
   sdk: ^3.6.0

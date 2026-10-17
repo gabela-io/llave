@@ -78,6 +78,9 @@ Future<FfiApiResult> deactivate() => RustLib.instance.api.crateApiDeactivate();
 /// Log out and clear saved credentials.
 Future<bool> logout() => RustLib.instance.api.crateApiLogout();
 
+/// llave's version and the Cl@ve app version it matches.
+Future<String> version() => RustLib.instance.api.crateApiVersion();
+
 /// Validate a NIF format without making any API calls.
 Future<String> validateNif({required String nif}) =>
     RustLib.instance.api.crateApiValidateNif(nif: nif);
