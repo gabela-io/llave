@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust (test, rustfmt, clippy) and book
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-ci-${{ runner.os }}-${{ hashFiles('flake.lock', 'nix/devshells/ci.nix') }}
+          restore-prefixes-first-match: nix-ci-${{ runner.os }}-
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: nix develop .#ci -c just test
+      - name: Lint
+        run: nix develop .#ci -c just lint
+      - name: Book
+        run: nix develop .#ci -c mdbook build book
+
+  flutter:
+    name: Flutter (analyze, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-ci-${{ runner.os }}-${{ hashFiles('flake.lock', 'nix/devshells/ci.nix') }}
+          restore-prefixes-first-match: nix-ci-${{ runner.os }}-
+      - name: Dependencies
+        run: nix develop ..#ci -c flutter pub get
+      - name: Analyze
+        run: nix develop ..#ci -c flutter analyze
+      - name: Test
+        run: nix develop ..#ci -c flutter test

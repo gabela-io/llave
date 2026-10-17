@@ -13,7 +13,7 @@ Rust core + CLI + Flutter app for Cl@ve. Behaviour must match the official app 6
 | `just frb-generate` | Regenerate flutter_rust_bridge bindings (see Gotchas) |
 | `just release` | Signed release artifacts in `dist/v<version>` (see Releases) |
 
-The Nix dev shell (direnv) provides every tool; run commands inside it.
+The Nix dev shell (direnv) provides every tool; run commands inside it. CI (`.github/workflows/ci.yml`) runs `just test`, `just lint`, the book and the Flutter checks in the lean `nix develop .#ci` shell (`nix/devshells/ci.nix`); add any tool a check needs there too.
 
 ## Architecture
 

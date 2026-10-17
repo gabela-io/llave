@@ -9,6 +9,7 @@
 
 **Activate your device, reveal your Cl@ve PIN and approve logins, without the official app.**
 
+[![CI](https://img.shields.io/github/actions/workflow/status/gabela-io/llave/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/gabela-io/llave/actions/workflows/ci.yml)
 [![Cl@ve 6.2.10](https://img.shields.io/badge/Cl%40ve-6.2.10-c8102e?style=flat-square)](book/src/introduction.md)
 [![Rust](https://img.shields.io/badge/Rust-core%20%2B%20CLI-dea584?style=flat-square&logo=rust&logoColor=white)](crates/)
 [![Flutter](https://img.shields.io/badge/Flutter-Linux%20%7C%20Android-02569b?style=flat-square&logo=flutter&logoColor=white)](flutter/)
