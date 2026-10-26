@@ -6,7 +6,7 @@ All notable changes to llave are documented here. The format follows
 also names the official Cl@ve app version (`es.aeat.pin24h`) whose behaviour
 it matches.
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-10-26
 
 Matches Cl@ve **6.2.10** (build 294).
 
